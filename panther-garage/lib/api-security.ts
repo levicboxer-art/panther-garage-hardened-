@@ -33,12 +33,46 @@ export function rateLimitedResponse(retryAfter: number) {
   );
 }
 
+/** Read JSON without buffering an unbounded request body into memory. */
 export async function readJson<T = Record<string, unknown>>(request: Request, maxBytes = 64 * 1024): Promise<T> {
-  const declared = Number(request.headers.get("content-length") || 0);
-  if (declared > maxBytes) throw new Error("BODY_TOO_LARGE");
-  const text = await request.text();
-  if (Buffer.byteLength(text, "utf8") > maxBytes) throw new Error("BODY_TOO_LARGE");
-  return JSON.parse(text) as T;
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null) {
+    const declared = Number(contentLength);
+    if (!Number.isSafeInteger(declared) || declared < 0 || declared > maxBytes) {
+      throw new Error("BODY_TOO_LARGE");
+    }
+  }
+
+  if (!request.body) throw new Error("INVALID_JSON");
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.byteLength;
+      if (total > maxBytes) {
+        await reader.cancel();
+        throw new Error("BODY_TOO_LARGE");
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+  } catch {
+    throw new Error("INVALID_JSON");
+  }
 }
 
 export function invalidBodyResponse(error: unknown) {

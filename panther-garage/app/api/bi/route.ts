@@ -29,7 +29,12 @@ export async function GET(req: Request) {
     computeBusinessIntelligence(supabase, days),
     computeActivityLedger(supabase, days),
   ]);
-  if (!bi.ok) return NextResponse.json({ error: bi.error }, { status: 400 });
-  if (!ledger.ok) return NextResponse.json({ error: ledger.error }, { status: 400 });
+  if (!bi.ok || !ledger.ok) {
+    // These calculations can include raw database diagnostics; never return those to clients.
+    return NextResponse.json(
+      { error: "Business intelligence data is temporarily unavailable." },
+      { status: 503 },
+    );
+  }
   return NextResponse.json({ ...bi.data, activity: ledger.data });
 }
