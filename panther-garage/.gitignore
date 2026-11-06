@@ -1,0 +1,23 @@
+node_modules/
+.next/
+out/
+.env
+.env.local
+.env.*.local
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+credentials*.json
+service-account*.json
+.DS_Store
+npm-debug.log*
+
+# Local runtime/build artifacts (not project source)
+*.log
+dev-server.log
+dev-server.err.log
+tsconfig.tsbuildinfo
