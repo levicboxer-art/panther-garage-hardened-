@@ -12,6 +12,7 @@ import PurchasingWorkspace from "@/components/PurchasingWorkspace";
 import ReportsWorkspace from "@/components/ReportsWorkspace";
 import RestockingWorkspace from "@/components/RestockingWorkspace";
 import NotificationCenter from "@/components/NotificationCenter";
+import ChatWorkspace from "@/components/ChatWorkspace";
 import BookingsWorkspace from "@/components/BookingsWorkspace";
 import OrdersWorkspace from "@/components/OrdersWorkspace";
 import InventoryWorkspace from "@/components/InventoryWorkspace";
@@ -47,6 +48,7 @@ import {
   ClipboardList,
   Bot,
   ShieldAlert,
+  MessageCircle,
 } from "lucide-react";
 
 type Product = {
@@ -88,6 +90,7 @@ const nav = [
   ["Restocking", TrendingUp],
   ["Reports", FileBarChart],
   ["Shift reports", ClipboardList],
+  ["Team chat", MessageCircle],
   ["Insights", BrainCircuit],
   ["Settings", Settings],
 ] as const;
@@ -113,7 +116,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
 
-  const low = products.filter((p) => p.active && p.stock <= p.minimum_stock);
+  const low = products.filter((p) => p.active && p.stock <= Math.max(p.minimum_stock, 2));
 
   // The light theme is a BOSS-only preference. Employees always keep the
   // standard dashboard theme so they cannot leave the workspace unreadable.
@@ -354,7 +357,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
             >
               <Bot size={16} />
             </button>
-            <NotificationCenter />
+            <NotificationCenter role={profile.role} />
             <div className="text-right hidden sm:block">
               <div className="text-xs font-semibold">{profile.full_name}</div>
               <div className="text-[10px] muted">
@@ -439,7 +442,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
                   {
                     label: "Low-stock alerts",
                     value: String(low.length),
-                    sub: "At or below minimum level",
+                    sub: "Two units or below needs attention",
                     icon: Bell,
                   },
                   {
@@ -477,7 +480,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
                           <span>{p.name}</span>
                           <span
                             className={
-                              p.stock <= p.minimum_stock ? "text-amber-300" : "text-gray-400"
+                              p.stock <= Math.max(p.minimum_stock, 2) ? "text-amber-300" : "text-gray-400"
                             }
                           >
                             {p.stock} units
@@ -604,12 +607,14 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           {tab === "Reports" ? <ReportsWorkspace role={profile.role} /> : null}
           {tab === "Shift reports" ? <ShiftReportsWorkspace profile={{ id: profile.id, full_name: profile.full_name, role: profile.role }} /> : null}
           {tab === "Restocking" && profile.role === "BOSS" ? <RestockingWorkspace role={profile.role} /> : null}
+          {tab === "Team chat" ? <ChatWorkspace profileId={profile.id} role={profile.role} /> : null}
 
           {!(
             [
               "Overview",
               "Reports",
               "Shift reports",
+              "Team chat",
               "Inventory",
               "Import",
               "Catalogue review",
