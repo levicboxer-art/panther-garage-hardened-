@@ -337,3 +337,11 @@ Translation is deliberately phrase-based. Database values such as product names,
 - The dashboard was exercised with a temporary mock-profile route, which was removed before the final build.
 
 
+
+## Stage 14 — Staff alerts, Boss email digest and team chat
+
+Apply `supabase/migrations/014_alerts_email_chat.sql` after the existing migrations, or use the updated consolidated `supabase/schema.sql` for a fresh database. Low-stock alerts are generated for every active staff member when a product reaches two units or fewer, while still respecting a higher product-specific minimum stock level. Duplicate warnings for the same product are suppressed for 24 hours.
+
+The dashboard notification center now refreshes automatically, distinguishes stock, approval, finance and purchasing alerts, and shows a clear unread/high-priority state. The **Team chat** workspace provides private direct messages between the BOSS and active EMPLOYEE accounts; employees can message the Boss and the Boss can message each employee.
+
+Boss email digests are optional and server-only. To enable them, set `RESEND_API_KEY`, `NOTIFICATION_EMAIL_FROM`, and `BOSS_ALERT_EMAIL` in `.env.local`. The dashboard periodically dispatches new unread notification alerts through the server, uses the configured AI provider to triage the digest priority and summary, and records successful deliveries so the same notification is not repeatedly emailed. If these values are unset, in-app alerts and chat continue to work without email.
