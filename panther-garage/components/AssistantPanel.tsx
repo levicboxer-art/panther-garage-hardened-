@@ -13,7 +13,18 @@ type Product = {
   selling_price: number;
 };
 
-type Turn = { role: "user" | "assistant"; content: string };
+type Turn = { role: "user" | "assistant"; content: string; navigation?: string };
+const NAV_TARGETS = new Set([
+  "Overview", "Inventory", "Import", "Catalogue review", "Sales", "Repairs", "Customers",
+  "Bookings", "Online Orders", "Employees", "Purchases", "Restocking", "Reports",
+  "Shift reports", "Team chat", "Insights", "Settings",
+]);
+function parseNavigation(text: string, role: "BOSS" | "EMPLOYEE") {
+  const match = text.match(/\[\[NAV:([^\]]+)\]\]/i);
+  const target = match?.[1]?.trim() || "";
+  const allowed = NAV_TARGETS.has(target) && (role === "BOSS" || !["Import", "Catalogue review", "Employees", "Purchases", "Restocking", "Insights"].includes(target));
+  return { content: text.replace(/\s*\[\[NAV:[^\]]+\]\]\s*/gi, "\n").trim(), navigation: allowed ? target : undefined };
+}
 
 /* ---------- instant, fully local navigation index (zero network latency) ---------- */
 type Feature = { label: string; desc: string; tab?: string; href?: string; bossOnly?: boolean; keywords: string };
@@ -195,7 +206,8 @@ export default function AssistantPanel({
             if (obj.error) throw new Error(obj.error);
             if (typeof obj.c === "string") {
               answer += obj.c;
-              setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, content: answer } : x)));
+              const parsed = parseNavigation(answer, role);
+              setTurns((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, content: parsed.content, navigation: parsed.navigation } : x)));
               scrollDown();
             }
           } catch (e) {
@@ -346,7 +358,10 @@ export default function AssistantPanel({
                           <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-lime-300" />
                         </span>
                       ) : (
-                        <Rich text={t.content} />
+                        <>
+                          <Rich text={t.content} />
+                          {t.navigation && <button onClick={() => { onNavigate(t.navigation!); onClose(); }} className="mt-2 block rounded-lg border border-lime-300/30 bg-lime-300/10 px-2.5 py-1.5 text-xs font-semibold text-lime-200 hover:bg-lime-300/20">Open {t.navigation} →</button>}
+                        </>
                       )}
                     </div>
                   ),

@@ -7,6 +7,7 @@ import {
   buildShiftReportsDigest,
   buildSystemPrompt,
   findPlatformResources,
+  inferNavigationTarget,
   upstreamErrorMessage,
   validateMessages,
   type ChatMessage,
@@ -35,6 +36,11 @@ function readWithIdle<T>(read: Promise<T>, ms: number): Promise<T> {
 
 /** Free health probe: is the assistant wired up and can the provider be reached? */
 export async function GET() {
+  const supabase = await createClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const { data: profile } = await supabase.from("profiles").select("active").eq("id", user.id).single();
+  if (!profile?.active) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const cfg = aiConfig();
   if (!cfg.configured)
     return NextResponse.json({ configured: false, model: cfg.model, upstream: "no-key" });
@@ -96,6 +102,7 @@ export async function POST(req: Request) {
   // warehouse query stalls, degrade to an ungrounded answer rather than
   // hanging the request (the answer is still useful; latency is bounded).
   const lastQuestion = messages[messages.length - 1].content;
+  const navigationTarget = inferNavigationTarget(lastQuestion, profile.role);
   const [digest, resources, shiftReports] = await withTimeout(
     Promise.all([
       buildBusinessDigest(supabase, profile.role),
@@ -117,6 +124,9 @@ export async function POST(req: Request) {
         shiftReports,
       }),
     },
+    ...(navigationTarget
+      ? [{ role: "system" as const, content: `SAFE NAVIGATION HINT: The likely workspace for this question is ${navigationTarget}. Use [[NAV:${navigationTarget}]] only if it is the single clear destination.` }]
+      : []),
     ...messages,
   ];
 

@@ -22,6 +22,36 @@ export function aiConfig() {
   };
 }
 
+const NAVIGATION_TARGETS = [
+  "Overview", "Inventory", "Import", "Catalogue review", "Sales", "Repairs", "Customers",
+  "Bookings", "Online Orders", "Employees", "Purchases", "Restocking", "Reports",
+  "Shift reports", "Team chat", "Insights", "Settings",
+] as const;
+export type NavigationTarget = (typeof NAVIGATION_TARGETS)[number];
+
+/** Lightweight intent routing keeps the assistant useful even when the model is unavailable. */
+export function inferNavigationTarget(text: string, role: string): NavigationTarget | null {
+  const q = text.toLowerCase();
+  const rules: [NavigationTarget, RegExp][] = [
+    ["Insights", /\b(insight|analytics|business intelligence|margin|profit|forecast|trend|revenue analysis)\b/],
+    ["Inventory", /\b(inventory|stock|product register|receive goods|part stock)\b/],
+    ["Restocking", /\b(reorder|restock|supplier lead|safety stock|stockout)\b/],
+    ["Sales", /\b(sale|sell|pos|invoice|payment|receipt)\b/],
+    ["Repairs", /\b(repair|workshop|job card|mechanic|labour)\b/],
+    ["Shift reports", /\b(shift report|handover|opening stock|closing stock|staff report)\b/],
+    ["Purchases", /\b(purchase order|supplier invoice|expense|payable)\b/],
+    ["Customers", /\b(customer|client|purchase history|repeat buyer)\b/],
+    ["Bookings", /\b(booking|appointment)\b/],
+    ["Online Orders", /\b(online order|web order|store order)\b/],
+    ["Team chat", /\b(chat|message|communicate|contact an employee|contact the boss)\b/],
+  ];
+  const match = rules.find(([, pattern]) => pattern.test(q));
+  if (!match) return null;
+  const [target] = match;
+  if (role !== "BOSS" && ["Insights", "Restocking", "Purchases"].includes(target)) return null;
+  return target;
+}
+
 /** Compact map of the platform so the assistant can navigate staff to real features. */
 export const PLATFORM_GUIDE = `
 PANTHER GARAGE PLATFORM MAP (Panther Legacy Garage Management System, Rwanda, currency RWF):
@@ -196,6 +226,7 @@ export function buildSystemPrompt(opts: {
     `You are speaking with ${opts.fullName} whose role is ${opts.role}.`,
     "Answer in the same language the user writes in (English, Kinyarwanda or French).",
     "Be concise and practical; use short paragraphs or bullets. Amounts are RWF.",
+    "For business analysis, label evidence strength as High, Medium or Low. High requires enough recent records and a clear trend; Low means a small sample, missing history or a rule-based estimate. Never present a forecast as a fact.",
     "GROUNDING RULES: quote ONLY numbers from the LIVE BUSINESS DATA block when you have it.",
     "If the data block does not cover the question, say what you can and point to the exact workspace that holds the answer — never invent figures, products or customers.",
     isBoss
@@ -203,6 +234,7 @@ export function buildSystemPrompt(opts: {
       : "This EMPLOYEE cannot see costs, margins or business analytics; direct such questions to the BOSS instead of quoting numbers. You can still explain features, workflows and operational data. For an employee, 'cost' means the selling price unless the BOSS approves otherwise.",
     "ITEM FINDER: when the user looks for a part or asks its price, answer from CATALOGUE MATCHES — give name, SKU, selling price, live stock (and for the BOSS the FIFO unit cost and margin). Suggest Inventory or the public part page for one-click follow-up.",
     "USABILITY COACH: when asked how something works or where to do something, answer like a trained colleague: (1) the exact sidebar module to open, (2) the concrete button/field to use, (3) what happens afterwards including rules the user must know (e.g. a part page only goes live once the owner confirms the price, a non-credit sale must be paid in full). Prefer 2-4 short numbered steps over prose. If a capability does not exist, say so plainly and offer the closest existing workflow — never send staff to owner-only screens they cannot open.",
+    "NAVIGATION ACTION: if the answer clearly points to one dashboard workspace, end with exactly one machine-readable line in this form: [[NAV:Workspace name]]. Use only a workspace from the PLATFORM MAP and do not include the line when no single destination is clear. The line is removed from the user-visible answer and becomes an optional Open workspace button.",
     "RESOURCE ALLOCATION: when asked who/what to put where, reason from the data: staff — use staff_activity, workshop job backlogs and recent shift reports to suggest who should handle POS, repairs, deliveries or ordering; stock — use best_sellers, low stock, demand_forecast and slow_movers to recommend what to reorder now and what to leave (receiving and purchase orders live in Inventory/Purchases, owner-only); money — for the BOSS factor in payables, payment mix and credit exposure when prioritizing spending. Give one clear recommendation first, then alternatives.",
     isBoss
       ? "BOSS BRIEFING: for analysis, evaluation or 'how is the business' questions act as a sharp analyst: lead with the single most important finding, support it with 2-4 exact figures from LIVE BUSINESS DATA (kpis, margins_sample, demand_forecast, customers), mention any transparency_check flagged WATCH or FLAG even when not asked, and finish with the one best next action. When asked to evaluate a decision or feature, weigh measured evidence (trends, reconciliation variances, staff accountability) and give a verdict, not a summary."
