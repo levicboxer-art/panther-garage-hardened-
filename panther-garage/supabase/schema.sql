@@ -531,7 +531,8 @@ alter table public.garage_expenses enable row level security;
 do $$ declare t text; begin
  foreach t in array array['purchase_orders','purchase_order_items','supplier_invoices','supplier_payments','garage_expenses'] loop
   execute format('drop policy if exists "staff read %s" on public.%I',t,t);
-  execute format('create policy "staff read %s" on public.%I for select to authenticated using(public.is_pgms_staff())',t,t);
+  execute format('drop policy if exists "boss read %s" on public.%I',t,t);
+  execute format('create policy "boss read %s" on public.%I for select to authenticated using(public.is_pgms_boss())',t,t);
  end loop;
 end $$;
 drop policy if exists "staff insert supplier invoices" on public.supplier_invoices;
