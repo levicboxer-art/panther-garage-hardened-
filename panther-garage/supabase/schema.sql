@@ -142,7 +142,8 @@ create policy "staff insert suppliers" on public.suppliers for insert to authent
 drop policy if exists "boss update suppliers" on public.suppliers;
 create policy "boss update suppliers" on public.suppliers for update to authenticated using(public.is_pgms_boss()) with check(public.is_pgms_boss());
 drop policy if exists "staff read batches" on public.inventory_batches;
-create policy "staff read batches" on public.inventory_batches for select to authenticated using(public.is_pgms_staff());
+drop policy if exists "boss read batches" on public.inventory_batches;
+create policy "boss read batches" on public.inventory_batches for select to authenticated using(public.is_pgms_boss());
 drop policy if exists "staff read movements" on public.stock_movements;
 create policy "staff read movements" on public.stock_movements for select to authenticated using(public.is_pgms_staff());
 -- Intentionally no direct INSERT/UPDATE/DELETE policies on batches or movements.

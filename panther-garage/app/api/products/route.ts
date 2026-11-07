@@ -38,7 +38,7 @@ function stockStatus(active: boolean, physical: number, minimum: number, reserve
   if (!active) return "INACTIVE";
   if (reserved > 0) return "RESERVED";
   if (physical <= 0) return "OUT OF STOCK";
-  if (physical <= minimum) return "LOW STOCK";
+  if (physical <= Math.max(minimum, 2)) return "LOW STOCK";
   return "IN STOCK";
 }
 
