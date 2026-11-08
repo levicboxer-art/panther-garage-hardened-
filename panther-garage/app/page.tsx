@@ -272,7 +272,7 @@ export default function Home() {
 
   return (
     <main>
-      <header className="border-b border-white/[.08] sticky top-0 z-30 bg-[#070809]/65 backdrop-blur-2xl shadow-[0_20px_60px_-40px_rgba(0,0,0,.9)]">
+      <header className="site-header border-b border-white/[.08] sticky top-0 z-30 bg-[#070809]/78 backdrop-blur-2xl shadow-[0_20px_60px_-40px_rgba(0,0,0,.9)]">
         <div className="container h-[76px] flex items-center justify-between">
           <a href="#" className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-lime text-black grid place-items-center">
@@ -315,6 +315,15 @@ export default function Home() {
             </button>
           </div>
         </div>
+        <nav aria-label="Mobile navigation" className="site-mobile-nav md:hidden border-t border-white/[.06]">
+          <div className="container flex gap-2 overflow-x-auto py-2.5">
+            {NAV_ITEMS.map((item) => (
+              <a key={item.label} href={item.href} className="mobile-nav-link whitespace-nowrap">
+                {item.label}
+              </a>
+            ))}
+          </div>
+        </nav>
       </header>
 
       <section className="relative isolate overflow-hidden">
@@ -398,7 +407,7 @@ export default function Home() {
                 garage has confirmed them; unavailable items are clearly marked.
               </p>
             </div>
-            <div className="flex items-center gap-2 rounded-lg border border-line px-3 py-2">
+            <div className="catalogue-search flex items-center gap-2 rounded-lg border border-line px-3 py-2">
               <Search size={16} className="text-gray-500" />
               <input
                 value={search}
@@ -411,17 +420,18 @@ export default function Home() {
           </div>
 
           <div className="card mb-7 p-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="flex items-center gap-2 text-[10px] uppercase tracking-[.16em] muted">
-                <SlidersHorizontal size={14} /> Filters
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="flex items-center gap-2 text-[10px] uppercase tracking-[.16em] muted">
+                  <SlidersHorizontal size={14} /> Filters
+                </span>
               <button
                 onClick={() => setCategory("All")}
                 className={`pill ${category === "All" ? "!border-lime !text-lime" : ""}`}
               >
                 All
               </button>
-              {categories.map((item) => (
+                {categories.map((item) => (
                 <button
                   key={item}
                   onClick={() => setCategory(item)}
@@ -429,7 +439,9 @@ export default function Home() {
                 >
                   {item}
                 </button>
-              ))}
+                ))}
+              </div>
+              <span className="text-xs muted">{loading ? "Loading catalogue…" : `${filtered.length} of ${products.length} parts`}</span>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2 md:flex-nowrap">
               <select
@@ -540,7 +552,7 @@ export default function Home() {
                 d: "Helmets, protective gear and useful riding accessories.",
               },
             ].map((service, index) => (
-              <div key={index} className="card p-6">
+              <div key={index} className="card service-card p-6">
                 <div className="w-12 h-12 rounded-xl bg-lime/10 text-lime grid place-items-center mb-6">
                   {service.icon}
                 </div>
@@ -630,15 +642,19 @@ export default function Home() {
               window.setTimeout(() => setToast(""), 2600);
             }}
           >
-            <input className="field" required placeholder="Your name" />
-            <input className="field" required placeholder="Phone number" />
-            <select className="field">
+            <label className="sr-only" htmlFor="contact-name">Your name</label>
+            <input id="contact-name" className="field" required placeholder="Your name" />
+            <label className="sr-only" htmlFor="contact-phone">Phone number</label>
+            <input id="contact-phone" className="field" required placeholder="Phone number" />
+            <label className="sr-only" htmlFor="contact-interest">What can we help with?</label>
+            <select id="contact-interest" className="field">
               <option>I&apos;m interested in…</option>
               <option>Spare parts</option>
               <option>Motorcycle repair</option>
               <option>Rider gear</option>
             </select>
-            <textarea className="field min-h-24" placeholder="Tell us more…" />
+            <label className="sr-only" htmlFor="contact-message">Tell us more</label>
+            <textarea id="contact-message" className="field min-h-24" placeholder="Tell us more…" />
             <button className="btn btn-primary">
               Send enquiry <ArrowRight size={16} />
             </button>
