@@ -14,11 +14,15 @@ export interface ChatMessage {
 }
 
 export function aiConfig() {
+  const ollamaKey = process.env.OLLAMA_API_KEY || "";
+  const deepseekKey = process.env.DEEPSEEK_API_KEY || "";
+  const usingOllama = Boolean(ollamaKey && !deepseekKey);
   return {
-    apiKey: process.env.DEEPSEEK_API_KEY || "",
-    baseUrl: (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, ""),
-    model: process.env.DEEPSEEK_MODEL || "deepseek-flash",
-    configured: Boolean(process.env.DEEPSEEK_API_KEY),
+    apiKey: usingOllama ? ollamaKey : deepseekKey,
+    baseUrl: (usingOllama ? process.env.OLLAMA_BASE_URL || "https://ollama.com/v1" : process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, ""),
+    model: usingOllama ? process.env.OLLAMA_MODEL || "gpt-oss:20b" : process.env.DEEPSEEK_MODEL || "deepseek-flash",
+    provider: usingOllama ? "ollama" : "deepseek",
+    configured: Boolean(ollamaKey || deepseekKey),
   };
 }
 
