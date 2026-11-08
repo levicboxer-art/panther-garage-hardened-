@@ -43,7 +43,7 @@ export async function GET() {
   if (!profile?.active) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   const cfg = aiConfig();
   if (!cfg.configured)
-    return NextResponse.json({ configured: false, model: cfg.model, upstream: "no-key" });
+    return NextResponse.json({ configured: false, provider: cfg.provider, model: cfg.model, upstream: "no-key" });
   try {
     // Real end-to-end check: /models answers even with zero balance, so probe
     // one completion token instead (cost is fractions of a cent).
@@ -58,9 +58,9 @@ export async function GET() {
       cache: "no-store",
       signal: AbortSignal.timeout(10_000),
     });
-    return NextResponse.json({ configured: true, model: cfg.model, upstream: res.ok ? "ok" : `http-${res.status}` });
+    return NextResponse.json({ configured: true, provider: cfg.provider, model: cfg.model, upstream: res.ok ? "ok" : `http-${res.status}` });
   } catch {
-    return NextResponse.json({ configured: true, model: cfg.model, upstream: "unreachable" });
+    return NextResponse.json({ configured: true, provider: cfg.provider, model: cfg.model, upstream: "unreachable" });
   }
 }
 
@@ -93,7 +93,7 @@ export async function POST(req: Request) {
   const cfg = aiConfig();
   if (!cfg.configured)
     return NextResponse.json(
-      { error: "The AI assistant is not configured yet (missing DEEPSEEK_API_KEY on the server)." },
+      { error: "The AI assistant is not configured yet. Add OLLAMA_API_KEY or DEEPSEEK_API_KEY as a server-only Vercel variable." },
       { status: 503 },
     );
 
