@@ -140,6 +140,10 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
     }
   }, []);
 
+  useEffect(() => {
+    if (tab === "Employees" && profile.role === "BOSS") void loadEmployees();
+  }, [tab, profile.role]);
+
   function toggleSidebar() {
     setSidebarCollapsed((current) => {
       const next = !current;

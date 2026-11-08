@@ -722,3 +722,15 @@ input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.
   .catalogue-search{width:100%;order:3}
   .catalogue-search input{width:100%}
 }
+
+.notification-panel{
+  background:#050607 !important;
+  background-image:none !important;
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+  border-color:rgba(255,255,255,.16) !important;
+  box-shadow:0 24px 70px -28px rgba(0,0,0,.98),0 0 0 1px rgba(255,255,255,.04) !important;
+}
+.notification-panel > div,
+.notification-panel button{background-color:#050607}
+.notification-panel button:hover{background-color:#111416 !important}

@@ -44,7 +44,7 @@ export default function NotificationCenter({ role }: { role: "BOSS" | "EMPLOYEE"
         <Bell size={17} />
         {unread > 0 && <span className={`absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full text-black text-[9px] font-bold grid place-items-center ${highPriority ? "bg-amber-300" : "bg-lime"}`}>{unread > 9 ? "9+" : unread}</span>}
       </button>
-      {open && <div className="absolute right-0 top-12 z-40 w-[min(420px,92vw)] card shadow-2xl overflow-hidden">
+      {open && <div className="notification-panel absolute right-0 top-12 z-40 w-[min(420px,92vw)] card shadow-2xl overflow-hidden">
         <div className="p-4 border-b border-line">
           <div className="flex justify-between items-start gap-3">
             <div>
