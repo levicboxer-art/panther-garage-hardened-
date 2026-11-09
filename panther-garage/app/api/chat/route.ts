@@ -32,7 +32,7 @@ export async function GET(request: Request) {
   if (!validId(peer) || !contacts?.some((contact) => contact.id === peer)) {
     return NextResponse.json({ error: "Choose an active staff contact." }, { status: 400 });
   }
-  const { data: messages, error } = await s.supabase
+  const { data: messages, error } = await admin
     .from("staff_messages")
     .select("id,sender_id,recipient_id,body,read_at,created_at")
     .or(`and(sender_id.eq.${s.user!.id},recipient_id.eq.${peer}),and(sender_id.eq.${peer},recipient_id.eq.${s.user!.id})`)
@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     .eq("role", s.profile!.role === "BOSS" ? "EMPLOYEE" : "BOSS")
     .maybeSingle();
   if (!allowed) return NextResponse.json({ error: "Messages can only be sent to an active colleague." }, { status: 403 });
-  const { data, error } = await s.supabase
+  const { data, error } = await admin
     .from("staff_messages")
     .insert({ sender_id: s.user!.id, recipient_id: recipientId, body: message })
     .select("id,sender_id,recipient_id,body,read_at,created_at")
@@ -78,7 +78,17 @@ export async function PATCH(request: Request) {
   try { body = await readJson(request, 4 * 1024); } catch (error) { return invalidBodyResponse(error); }
   const peer = String(body.peer_id || "");
   if (!validId(peer)) return NextResponse.json({ error: "Choose a valid conversation." }, { status: 400 });
-  const { error } = await s.supabase
+  let admin;
+  try { admin = createAdminClient(); } catch { return dbErrorResponse(503); }
+  const { data: allowed } = await admin
+    .from("profiles")
+    .select("id")
+    .eq("id", peer)
+    .eq("active", true)
+    .eq("role", s.profile!.role === "BOSS" ? "EMPLOYEE" : "BOSS")
+    .maybeSingle();
+  if (!allowed) return NextResponse.json({ error: "Choose an active staff contact." }, { status: 400 });
+  const { error } = await admin
     .from("staff_messages")
     .update({ read_at: new Date().toISOString() })
     .eq("recipient_id", s.user!.id)
