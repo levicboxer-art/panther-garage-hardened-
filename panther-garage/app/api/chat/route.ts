@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { dbErrorResponse, invalidBodyResponse, readJson } from "@/lib/api-security";
 
 async function session() {
@@ -20,9 +21,11 @@ export async function GET(request: Request) {
   if (s.response) return s.response;
   const url = new URL(request.url);
   const peer = url.searchParams.get("peer");
+  let admin;
+  try { admin = createAdminClient(); } catch { return dbErrorResponse(503); }
   const contactsQuery = s.profile!.role === "BOSS"
-    ? s.supabase.from("profiles").select("id,full_name,role,active").eq("role", "EMPLOYEE").eq("active", true).order("full_name")
-    : s.supabase.from("profiles").select("id,full_name,role,active").eq("role", "BOSS").eq("active", true).order("full_name");
+    ? admin.from("profiles").select("id,full_name,role,active").eq("role", "EMPLOYEE").eq("active", true).order("full_name")
+    : admin.from("profiles").select("id,full_name,role,active").eq("role", "BOSS").eq("active", true).order("full_name");
   const { data: contacts, error: contactsError } = await contactsQuery;
   if (contactsError) return dbErrorResponse(503);
   if (!peer) return NextResponse.json({ contacts: contacts || [], messages: [] });
@@ -49,7 +52,9 @@ export async function POST(request: Request) {
   if (!validId(recipientId) || !message || message.length > 2000) {
     return NextResponse.json({ error: "Enter a message of 1–2000 characters and choose a valid colleague." }, { status: 400 });
   }
-  const { data: allowed } = await s.supabase
+  let admin;
+  try { admin = createAdminClient(); } catch { return dbErrorResponse(503); }
+  const { data: allowed } = await admin
     .from("profiles")
     .select("id")
     .eq("id", recipientId)
