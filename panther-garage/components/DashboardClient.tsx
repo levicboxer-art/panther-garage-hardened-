@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
@@ -255,9 +256,13 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           }`}
         >
           <a href="/" className="flex items-center gap-3" title="Back to website">
-            <div className="w-9 h-9 rounded-lg bg-lime text-black grid place-items-center font-black shrink-0">
-              P
-            </div>
+            <Image
+              src="/favicon.png"
+              alt="Panther Legacy Garage emblem"
+              width={36}
+              height={36}
+              className="h-9 w-9 shrink-0 rounded-lg object-contain"
+            />
             {!sidebarCollapsed && (
               <div>
                 <b className="text-sm tracking-widest">PANTHER</b>

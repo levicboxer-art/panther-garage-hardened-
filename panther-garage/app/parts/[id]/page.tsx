@@ -1,6 +1,7 @@
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Bike, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import ProductImage from "@/components/ProductImage";
 import PartRequest from "@/components/PartRequest";
@@ -89,9 +90,13 @@ export default async function PartPage({ params }: { params: Promise<{ id: strin
       <header className="sticky top-0 z-30 border-b border-white/[.08] bg-[#070809]/65 backdrop-blur-2xl">
         <div className="container h-20 flex items-center justify-between">
           <Link href="/" className="flex items-center gap-3">
-            <span className="w-10 h-10 rounded-xl bg-lime text-black grid place-items-center">
-              <Bike />
-            </span>
+            <Image
+              src="/favicon.png"
+              alt="Panther Legacy Garage emblem"
+              width={40}
+              height={40}
+              className="h-10 w-10 rounded-xl object-contain"
+            />
             <span className="font-bold tracking-widest">
               PANTHER <span className="lime">GARAGE</span>
             </span>

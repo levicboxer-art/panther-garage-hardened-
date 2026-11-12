@@ -275,9 +275,14 @@ export default function Home() {
       <header className="site-header border-b border-white/[.08] sticky top-0 z-30 bg-[#070809]/78 backdrop-blur-2xl shadow-[0_20px_60px_-40px_rgba(0,0,0,.9)]">
         <div className="container site-header-inner h-[76px] flex items-center justify-between">
           <a href="#" className="brand-lockup flex items-center gap-3 min-w-0">
-            <div className="brand-mark w-10 h-10 rounded-xl bg-lime text-black grid place-items-center shrink-0">
-              <Bike />
-            </div>
+            <Image
+              src="/favicon.png"
+              alt="Panther Legacy Garage emblem"
+              width={40}
+              height={40}
+              priority
+              className="brand-mark h-10 w-10 shrink-0 rounded-xl object-contain"
+            />
             <div className="brand-copy min-w-0">
               <div className="brand-name font-bold tracking-[.16em] text-sm whitespace-nowrap">
                 PANTHER <span className="lime">LEGACY</span> GARAGE
@@ -609,9 +614,13 @@ export default function Home() {
                 <span className="text-[10px] font-bold uppercase tracking-[.18em] text-white/75">
                   Workshop care · Rwanda
                 </span>
-                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-lime text-black shadow-lg">
-                  <Bike size={17} />
-                </span>
+                <Image
+                  src="/favicon.png"
+                  alt="Panther Legacy Garage emblem"
+                  width={36}
+                  height={36}
+                  className="h-9 w-9 shrink-0 rounded-full object-contain shadow-lg"
+                />
               </div>
             </div>
           </div>
