@@ -717,10 +717,29 @@ input[type="date"]::-webkit-calendar-picker-indicator{filter:invert(1);opacity:.
 @media (max-width:767px){
   .container{width:min(100% - 28px,1180px)}
   .section{padding:58px 0}
-  .site-header .container{height:68px}
-  .site-header .btn-ghost{padding-left:10px;padding-right:10px}
+  .site-header .container{height:68px;gap:8px}
+  .site-header .brand-lockup{gap:8px;min-width:0}
+  .site-header .brand-mark{width:34px;height:34px;border-radius:10px}
+  .site-header .brand-mark svg{width:18px;height:18px}
+  .site-header .brand-copy{min-width:0}
+  .site-header .brand-name{max-width:calc(100vw - 176px);overflow:hidden;text-overflow:ellipsis;font-size:11px;letter-spacing:.11em}
+  .site-header .brand-tagline{font-size:7px;letter-spacing:.16em}
+  .site-header .lang-select{height:32px;padding-left:7px;padding-right:7px}
+  .site-header .btn-ghost{min-width:34px;padding-left:9px;padding-right:9px;font-size:0}
+  .site-header .btn-ghost svg{margin:0}
+  .site-header > .container > div:last-child{gap:6px}
   .catalogue-search{width:100%;order:3}
   .catalogue-search input{width:100%}
+  #about h2{font-size:2.1rem}
+  .why-image{padding:6px}
+  .why-image-frame{min-height:260px}
+}
+
+@media (max-width:420px){
+  .site-header .brand-name{max-width:calc(100vw - 154px);font-size:10px}
+  .site-header .brand-tagline{display:none}
+  .site-header .lang-select-code,.site-header .lang-select-chevron{display:none}
+  .site-header .lang-select{width:32px;justify-content:center;padding:0}
 }
 
 .notification-panel{

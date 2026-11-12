@@ -273,16 +273,16 @@ export default function Home() {
   return (
     <main>
       <header className="site-header border-b border-white/[.08] sticky top-0 z-30 bg-[#070809]/78 backdrop-blur-2xl shadow-[0_20px_60px_-40px_rgba(0,0,0,.9)]">
-        <div className="container h-[76px] flex items-center justify-between">
-          <a href="#" className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-lime text-black grid place-items-center">
+        <div className="container site-header-inner h-[76px] flex items-center justify-between">
+          <a href="#" className="brand-lockup flex items-center gap-3 min-w-0">
+            <div className="brand-mark w-10 h-10 rounded-xl bg-lime text-black grid place-items-center shrink-0">
               <Bike />
             </div>
-            <div>
-              <div className="font-bold tracking-[.16em] text-sm">
+            <div className="brand-copy min-w-0">
+              <div className="brand-name font-bold tracking-[.16em] text-sm whitespace-nowrap">
                 PANTHER <span className="lime">LEGACY</span> GARAGE
               </div>
-              <div className="text-[9px] tracking-[.25em] text-gray-500 whitespace-nowrap">
+              <div className="brand-tagline text-[9px] tracking-[.25em] text-gray-500 whitespace-nowrap">
                 PARTS • SERVICE • PERFORMANCE
               </div>
             </div>
@@ -342,13 +342,13 @@ export default function Home() {
           <div className="absolute inset-0 bg-gradient-to-r from-[#070809]/85 via-[#070809]/25 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-b from-[#070809] via-[#070809]/10 to-[#070809]" />
         </div>
-        <div className="container relative z-10 flex min-h-[88vh] flex-col items-start justify-between py-14 text-left">
+        <div className="container relative z-10 flex min-h-[78svh] flex-col items-start justify-between py-10 text-left md:min-h-[88vh] md:py-14">
           <div className="w-full max-w-3xl">
             <div className="pill glass inline-flex items-center gap-2.5 border-white/15 px-4 py-2 text-[11px] tracking-[.22em] text-gray-200">
               <span className="h-2 w-2 animate-pulse rounded-full bg-lime shadow-[0_0_14px_#c7f36b]" />{" "}
               YOUR RIDE. OUR PRIORITY.
             </div>
-            <h1 className="display mt-7 text-[3.4rem] font-bold leading-[.94] tracking-[-.055em] md:text-[6.5rem] lg:text-[7.5rem]">
+            <h1 className="display mt-6 text-[3.25rem] font-bold leading-[.94] tracking-[-.055em] sm:text-[4.2rem] md:mt-7 md:text-[6.5rem] lg:text-[7.5rem]">
               BUILT FOR
               <br />
               <span className="lime drop-shadow-[0_0_45px_rgba(199,243,107,.25)]">THE RIDE.</span>
@@ -571,7 +571,7 @@ export default function Home() {
       </section>
 
       <section id="about" className="section">
-        <div className="container grid md:grid-cols-2 gap-10 items-center">
+        <div className="container grid items-center gap-8 md:grid-cols-2 md:gap-10">
           <div>
             <div className="tag mb-3">WHY PANTHER LEGACY GARAGE</div>
             <h2 className="text-4xl font-bold leading-tight">
@@ -595,12 +595,25 @@ export default function Home() {
               </div>
             </div>
           </div>
-          <div className="card p-2">
-            <img
-              className="rounded-xl w-full h-[340px] object-cover"
-              src="https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=1000"
-              alt="Motorcycle workshop"
-            />
+          <div className="why-image card p-2">
+            <div className="why-image-frame relative min-h-[300px] overflow-hidden rounded-xl sm:min-h-[340px]">
+              <Image
+                src="/hero-bike.jpg"
+                alt="Motorcycle ready for service at Panther Legacy Garage"
+                fill
+                sizes="(max-width: 767px) 100vw, 50vw"
+                className="object-cover object-center"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#070809]/70 via-transparent to-transparent" />
+              <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between gap-3">
+                <span className="text-[10px] font-bold uppercase tracking-[.18em] text-white/75">
+                  Workshop care · Rwanda
+                </span>
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-lime text-black shadow-lg">
+                  <Bike size={17} />
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </section>
