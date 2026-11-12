@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { staffInventorySummary } from "@/lib/inventory-summary";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dbErrorResponse, invalidBodyResponse, rateLimit, rateLimitedResponse, readJson, requestKey } from "@/lib/api-security";
+import { flushBossAlertEmail } from "@/lib/alert-delivery";
 
 const ORDER_STATUSES = ["PENDING", "CONTACTED", "CONFIRMED", "FULFILLED", "CANCELLED"];
 const RANK: Record<string, number> = { PENDING: 0, CONTACTED: 1, CONFIRMED: 2 };
@@ -309,6 +310,7 @@ async function fulfilOrder(supabase: any, order: any, rawMethod: unknown) {
     .select("id,invoice_number,total,amount_paid,balance_due,payment_method,created_at")
     .eq("id", saleId)
     .single();
+  await flushBossAlertEmail();
 
   return NextResponse.json({
     message: sale

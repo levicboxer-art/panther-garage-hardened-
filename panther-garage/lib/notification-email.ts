@@ -31,6 +31,18 @@ function config() {
   };
 }
 
+async function bossRecipients(admin: SupabaseClient, bossIds: string[]) {
+  const configured = config().bossEmail.trim();
+  if (configured) return [configured];
+  const recipients: string[] = [];
+  for (const bossId of bossIds) {
+    const result = await admin.auth.admin.getUserById(bossId);
+    const email = result.data.user?.email?.trim();
+    if (email) recipients.push(email);
+  }
+  return [...new Set(recipients)];
+}
+
 async function evaluateWithAi(items: NotificationRow[]) {
   const fallback = {
     subject: `Panther Garage: ${items.length} new notification${items.length === 1 ? "" : "s"}`,
@@ -71,7 +83,7 @@ async function evaluateWithAi(items: NotificationRow[]) {
 
 export async function dispatchBossNotificationEmail(admin: SupabaseClient) {
   const cfg = config();
-  if (!cfg.resendKey || !cfg.bossEmail) return { configured: false, sent: 0 };
+  if (!cfg.resendKey) return { configured: false, sent: 0 };
 
   const { data: bosses, error: bossError } = await admin
     .from("profiles")
@@ -79,6 +91,8 @@ export async function dispatchBossNotificationEmail(admin: SupabaseClient) {
     .eq("role", "BOSS")
     .eq("active", true);
   if (bossError) throw bossError;
+  const recipients = await bossRecipients(admin, (bosses || []).map((boss) => boss.id));
+  if (!recipients.length) return { configured: false, sent: 0 };
 
   let sent = 0;
   for (const boss of bosses || []) {
@@ -110,7 +124,7 @@ export async function dispatchBossNotificationEmail(admin: SupabaseClient) {
       headers: { Authorization: `Bearer ${cfg.resendKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         from: cfg.from,
-        to: [cfg.bossEmail],
+        to: recipients,
         subject: evaluation.subject,
         html: `<div style="font-family:Arial,sans-serif;max-width:680px"><h2>${escapeHtml(evaluation.subject)}</h2><p><strong>AI priority: ${escapeHtml(evaluation.priority)}</strong></p><p>${escapeHtml(evaluation.summary)}</p><hr><ul>${list}</ul><p style="color:#666;font-size:12px">Open Panther Garage to review and mark notifications as read.</p></div>`,
       }),

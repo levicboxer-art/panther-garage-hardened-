@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { dbErrorResponse, invalidBodyResponse, readJson } from "@/lib/api-security";
+import { flushBossAlertEmail } from "@/lib/alert-delivery";
 async function staff(){
  const supabase=await createClient(); const {data:{user}}=await supabase.auth.getUser();
  if(!user)return {supabase,user:null,response:NextResponse.json({error:"Unauthorized"},{status:401})};
@@ -26,5 +27,6 @@ export async function POST(req:Request){
  const {data,error}=await s.supabase.rpc("create_pos_sale",{p_customer_id:b.customer_id||null,p_items:items,p_payment_method:String(b.payment_method||"CASH").toUpperCase(),p_amount_paid:paid,p_discount:discount,p_notes:String(b.notes||"")||null});
  if(error)return dbErrorResponse(400);
  const {data:sale}=await s.supabase.from("sales").select("id,invoice_number,total,amount_paid,balance_due,created_at").eq("id",data).single();
+ await flushBossAlertEmail();
  return NextResponse.json({sale,message:"Sale completed and stock deducted using FIFO."},{status:201});
 }

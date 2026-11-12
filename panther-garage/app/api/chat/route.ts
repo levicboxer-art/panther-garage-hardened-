@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dbErrorResponse, invalidBodyResponse, readJson } from "@/lib/api-security";
+import { flushBossAlertEmail } from "@/lib/alert-delivery";
 
 async function session() {
   const supabase = await createClient();
@@ -68,6 +69,7 @@ export async function POST(request: Request) {
     .select("id,sender_id,recipient_id,body,read_at,created_at")
     .single();
   if (error) return dbErrorResponse(400);
+  await flushBossAlertEmail();
   return NextResponse.json({ message: data }, { status: 201 });
 }
 

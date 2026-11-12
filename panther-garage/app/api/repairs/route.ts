@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { flushBossAlertEmail } from "@/lib/alert-delivery";
 async function staff(){
   const supabase=await createClient();
   const {data:{user}}=await supabase.auth.getUser();
@@ -29,6 +30,7 @@ export async function POST(req:Request){
   });
   if(error)return NextResponse.json({error:error.message},{status:400});
   const {data:job}=await s.supabase.from("repair_jobs").select("id,job_number,status,total_cost,received_at").eq("id",data).single();
+  await flushBossAlertEmail();
   return NextResponse.json({job,message:"Repair job created and selected spare parts deducted from FIFO stock."},{status:201});
 }
 export async function PATCH(req:Request){

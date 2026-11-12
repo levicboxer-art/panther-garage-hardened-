@@ -9,6 +9,7 @@ const categoryStyle: Record<string, { icon: typeof Bell; label: string; tone: st
   APPROVAL: { icon: ShieldAlert, label: "Approval", tone: "text-orange-300 bg-orange-300/10 border-orange-300/20" },
   EXPENSE: { icon: CircleDollarSign, label: "Finance", tone: "text-cyan-300 bg-cyan-300/10 border-cyan-300/20" },
   PURCHASE: { icon: Bell, label: "Purchasing", tone: "text-violet-300 bg-violet-300/10 border-violet-300/20" },
+  MESSAGE: { icon: Mail, label: "New message", tone: "text-lime bg-lime/10 border-lime/20" },
 };
 
 export default function NotificationCenter({ role }: { role: "BOSS" | "EMPLOYEE" }) {
