@@ -598,8 +598,8 @@ export default function Home() {
           <div className="why-image card p-2">
             <div className="why-image-frame relative min-h-[300px] overflow-hidden rounded-xl sm:min-h-[340px]">
               <Image
-                src="/hero-bike.jpg"
-                alt="Motorcycle ready for service at Panther Legacy Garage"
+                src="/why-panther-workshop.png"
+                alt="Panther Legacy Garage motorcycle workshop with tools and service bay"
                 fill
                 sizes="(max-width: 767px) 100vw, 50vw"
                 className="object-cover object-center"
