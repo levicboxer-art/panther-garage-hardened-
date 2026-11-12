@@ -3,8 +3,21 @@ import "./globals.css";
 import { LanguageProvider } from "@/components/LanguageProvider";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_APP_URL || "https://panther-legacy-garage.vercel.app"),
   title: "Panther Legacy Garage | Motorcycle Parts & Service",
   description: "Motorcycle spare parts, accessories and expert repairs.",
+  icons: {
+    icon: [{ url: "/favicon.png", type: "image/png", sizes: "1254x1254" }],
+    shortcut: ["/favicon.png"],
+    apple: [{ url: "/apple-touch-icon.png", type: "image/png", sizes: "1254x1254" }],
+  },
+  manifest: "/site.webmanifest",
+  openGraph: {
+    title: "Panther Legacy Garage | Motorcycle Parts & Service",
+    description: "Motorcycle spare parts, accessories and expert repairs.",
+    type: "website",
+    images: [{ url: "/favicon.png", width: 1254, height: 1254, alt: "Panther Legacy Garage emblem" }],
+  },
 };
 
 // Restore the language attribute before paint so assistive technology and CSS

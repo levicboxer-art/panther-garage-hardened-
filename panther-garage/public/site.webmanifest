@@ -1,0 +1,17 @@
+{
+  "name": "Panther Legacy Garage",
+  "short_name": "Panther Garage",
+  "description": "Motorcycle spare parts, accessories and expert repairs.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#070809",
+  "theme_color": "#070809",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
