@@ -345,3 +345,12 @@ Apply `supabase/migrations/014_alerts_email_chat.sql` after the existing migrati
 The dashboard notification center now refreshes automatically, distinguishes stock, approval, finance and purchasing alerts, and shows a clear unread/high-priority state. The **Team chat** workspace provides private direct messages between the BOSS and active EMPLOYEE accounts; employees can message the Boss and the Boss can message each employee.
 
 Boss email digests are optional and server-only. To enable them, set `RESEND_API_KEY`, `NOTIFICATION_EMAIL_FROM`, and `BOSS_ALERT_EMAIL` in `.env.local`. The dashboard periodically dispatches new unread notification alerts through the server, uses the configured AI provider to triage the digest priority and summary, and records successful deliveries so the same notification is not repeatedly emailed. If these values are unset, in-app alerts and chat continue to work without email.
+
+
+## Stage 16 — Hugging Face AI, staff stock quantities, chat, and alerts
+
+The Panther AI assistant and Boss email-digest triage use the Hugging Face Inference Providers OpenAI-compatible router by default. Store `HUGGINGFACE_API_KEY` as a server-only sensitive Vercel variable, with `HUGGINGFACE_BASE_URL=https://router.huggingface.co/v1` and the selected `HUGGINGFACE_MODEL`; never commit the token or expose it through a `NEXT_PUBLIC_` variable. The chat request/stream path remains behind authenticated server routes.
+
+Employees and the BOSS now receive the same exact physical and available quantities through `staff_inventory_summary()`, a restricted aggregate that returns no batch, supplier, or purchase-cost fields. BOSS-only product create/edit/price controls and batch-cost RLS remain in force. POS sales, repair issues, and online-order fulfillment continue using the transactional FIFO stock consumer. Customer order submissions remain requests until staff confirms and fulfills them; an unconfirmed request does not consume or reserve stock.
+
+Migration `supabase/migrations/016_staff_stock_chat_alerts.sql` installs the quantity-only aggregate, provisions the missing staff-chat and email-delivery tables, enforces active opposite-role Boss↔employee chat access at both the API and RLS layers, and sends low-stock and distinct out-of-stock alerts to all active staff. Stock alerts are generated on eligible stock movements and deduplicated per product/recipient/category for 24 hours. The same migration is appended to `supabase/schema.sql` for fresh installs.

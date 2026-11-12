@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { staffInventorySummary } from "@/lib/inventory-summary";
 
 const LOOKBACK_DAYS = 90;
 const DAY_MS = 86400000;
@@ -19,13 +20,13 @@ export async function GET() {
   const since = new Date(Date.now() - LOOKBACK_DAYS * DAY_MS).toISOString();
   const [products, inventory, movements] = await Promise.all([
     s.supabase.from("products").select("id,name,sku,category,minimum_stock,supplier_lead_time_days,safety_stock,target_stock_days,active").eq("active", true).order("name"),
-    s.supabase.from("inventory_summary").select("product_id,physical_stock,available_stock"),
+    staffInventorySummary(s.supabase),
     s.supabase.from("stock_movements").select("product_id,movement_type,quantity_delta,created_at").in("movement_type", ["SALE", "REPAIR_ISSUE"]).lt("quantity_delta", 0).gte("created_at", since).order("created_at", { ascending: false }).limit(10000)
   ]);
-  const failed = [products, inventory, movements].find(x => x.error);
+  const failed = [products, movements].find(x => x.error);
   if (failed) return NextResponse.json({ error: failed.error?.message || "Could not calculate restocking recommendations." }, { status: 400 });
 
-  const stockByProduct = new Map((inventory.data || []).map(x => [x.product_id, Number(x.physical_stock || 0)]));
+  const stockByProduct = new Map(inventory.map(x => [x.product_id, Number(x.physical_stock || 0)]));
   const demandByProduct = new Map<string, { units: number; events: number; days: Set<string> }>();
   for (const movement of movements.data || []) {
     const current = demandByProduct.get(movement.product_id) || { units: 0, events: 0, days: new Set<string>() };

@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { aiConfig } from "@/lib/ai-provider";
 
 type NotificationRow = {
   id: string;
@@ -19,13 +20,14 @@ function escapeHtml(value: string) {
 }
 
 function config() {
+  const ai = aiConfig();
   return {
     resendKey: process.env.RESEND_API_KEY || "",
     from: process.env.NOTIFICATION_EMAIL_FROM || "Panther Garage <alerts@example.com>",
     bossEmail: process.env.BOSS_ALERT_EMAIL || "",
-    aiKey: process.env.DEEPSEEK_API_KEY || "",
-    aiBase: (process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, ""),
-    aiModel: process.env.DEEPSEEK_MODEL || "deepseek-flash",
+    aiKey: ai.apiKey,
+    aiBase: ai.baseUrl,
+    aiModel: ai.model,
   };
 }
 
@@ -33,7 +35,7 @@ async function evaluateWithAi(items: NotificationRow[]) {
   const fallback = {
     subject: `Panther Garage: ${items.length} new notification${items.length === 1 ? "" : "s"}`,
     summary: items.map((item) => `${item.title}: ${item.message}`).join(" "),
-    priority: items.some((item) => item.category === "LOW_STOCK") ? "HIGH" : "NORMAL",
+    priority: items.some((item) => ["LOW_STOCK", "OUT_OF_STOCK"].includes(item.category)) ? "HIGH" : "NORMAL",
   };
   const cfg = config();
   if (!cfg.aiKey || !items.length) return fallback;

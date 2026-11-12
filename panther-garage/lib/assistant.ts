@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { computeBusinessIntelligence } from "@/lib/bi-analytics";
 import { computeActivityLedger } from "@/lib/activity-ledger";
+import { staffInventorySummary } from "@/lib/inventory-summary";
 
 /**
  * Server-only AI assistant layer for the DeepSeek API (OpenAI-compatible).
@@ -13,18 +14,7 @@ export interface ChatMessage {
   content: string;
 }
 
-export function aiConfig() {
-  const ollamaKey = process.env.OLLAMA_API_KEY || "";
-  const deepseekKey = process.env.DEEPSEEK_API_KEY || "";
-  const usingOllama = Boolean(ollamaKey && !deepseekKey);
-  return {
-    apiKey: usingOllama ? ollamaKey : deepseekKey,
-    baseUrl: (usingOllama ? process.env.OLLAMA_BASE_URL || "https://ollama.com/v1" : process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com").replace(/\/+$/, ""),
-    model: usingOllama ? process.env.OLLAMA_MODEL || "gpt-oss:20b" : process.env.DEEPSEEK_MODEL || "deepseek-flash",
-    provider: usingOllama ? "ollama" : "deepseek",
-    configured: Boolean(ollamaKey || deepseekKey),
-  };
-}
+export { aiConfig } from "@/lib/ai-provider";
 
 const NAVIGATION_TARGETS = [
   "Overview", "Inventory", "Import", "Catalogue review", "Sales", "Repairs", "Customers",
@@ -156,8 +146,8 @@ export async function findPlatformResources(supabase: SupabaseClient, userText: 
 
   // Enrich the hits with live stock and — for the BOSS — the FIFO cost still on the shelf.
   const ids = top.map((x) => x.p.id);
-  const [stockRes, batchRes] = await Promise.all([
-    supabase.from("inventory_summary").select("product_id,physical_stock,available_stock").in("product_id", ids),
+  const [stockRows, batchRes] = await Promise.all([
+    staffInventorySummary(supabase).catch(() => []),
     role === "BOSS"
       ? supabase
           .from("inventory_batches")
@@ -168,7 +158,7 @@ export async function findPlatformResources(supabase: SupabaseClient, userText: 
           .limit(300)
       : Promise.resolve({ data: [] as { product_id: string; unit_cost: number }[] }),
   ]);
-  const stockByProduct = new Map((stockRes.data || []).map((s: any) => [s.product_id, s]));
+  const stockByProduct = new Map(stockRows.map((s: any) => [s.product_id, s]));
   const fifoCostByProduct = new Map<string, number>();
   for (const b of batchRes.data || [])
     if (!fifoCostByProduct.has(b.product_id)) fifoCostByProduct.set(b.product_id, Number(b.unit_cost));
@@ -277,8 +267,8 @@ export function validateMessages(raw: unknown): ChatMessage[] | string {
 
 /** User-safe upstream errors. Maps provider codes to actionable guidance; never leaks internals. */
 export function upstreamErrorMessage(status: number): string {
-  if (status === 401 || status === 403) return "The AI provider rejected the API key. Ask the owner to verify DEEPSEEK_API_KEY.";
-  if (status === 402) return "The AI provider reports insufficient balance on the API key. Top up the DeepSeek account at platform.deepseek.com to enable AI answers.";
+  if (status === 401 || status === 403) return "The AI provider rejected its credentials. Ask the owner to verify the server-side token and provider permissions.";
+  if (status === 402) return "The AI provider reports that its usage allowance or balance is exhausted. Check the provider account billing.";
   if (status === 429) return "The AI provider is rate-limiting requests. Wait a few seconds and try again.";
   if (status >= 500) return "The AI provider is temporarily unavailable. Try again shortly.";
   return "The AI provider could not process this request. Try rephrasing it.";

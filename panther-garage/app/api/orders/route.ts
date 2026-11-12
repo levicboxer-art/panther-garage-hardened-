@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { staffInventorySummary } from "@/lib/inventory-summary";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { dbErrorResponse, invalidBodyResponse, rateLimit, rateLimitedResponse, readJson, requestKey } from "@/lib/api-security";
 
@@ -100,13 +101,12 @@ export async function GET() {
     )
   );
 
-  const [summaryResult, invoiceResult] = await Promise.all([
+  const [summaryRows, invoiceResult] = await Promise.all([
     productIds.length
-      ? s.supabase
-          .from("inventory_summary")
-          .select("product_id,physical_stock,available_stock")
-          .in("product_id", productIds)
-      : Promise.resolve({ data: [], error: null } as any),
+      ? staffInventorySummary(s.supabase).then((rows) =>
+          rows.filter((row) => productIds.includes(row.product_id)),
+        )
+      : Promise.resolve([]),
     s.supabase
       .from("sales")
       .select("id,invoice_number,payment_method,total,amount_paid,balance_due,notes,created_at")
@@ -116,7 +116,7 @@ export async function GET() {
   ]);
 
   const stockByProduct = new Map<string, number>(
-    (summaryResult.data || []).map((row: any) => [row.product_id, Number(row.available_stock || 0)])
+    summaryRows.map((row) => [row.product_id, Number(row.available_stock || 0)])
   );
   const invoiceByReference = new Map<string, any>();
   for (const invoice of invoiceResult.data || []) {

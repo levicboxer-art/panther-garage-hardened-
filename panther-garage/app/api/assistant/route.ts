@@ -93,7 +93,7 @@ export async function POST(req: Request) {
   const cfg = aiConfig();
   if (!cfg.configured)
     return NextResponse.json(
-      { error: "The AI assistant is not configured yet. Add OLLAMA_API_KEY or DEEPSEEK_API_KEY as a server-only Vercel variable." },
+      { error: "The AI assistant is not configured yet. Add HUGGINGFACE_API_KEY as a server-only Vercel variable." },
       { status: 503 },
     );
 

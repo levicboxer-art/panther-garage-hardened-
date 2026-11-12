@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { staffInventorySummary } from "@/lib/inventory-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -57,13 +58,8 @@ async function loadProducts(supabase: Supabase, isBoss: boolean) {
   if (error) throw new Error(error.message);
 
   const ids = (products || []).map((p: any) => p.id);
-  const [{ data: summary }, batchesResult] = await Promise.all([
-    ids.length
-      ? supabase
-          .from("inventory_summary")
-          .select("product_id,physical_stock,available_stock,minimum_stock")
-          .in("product_id", ids)
-      : Promise.resolve({ data: [] as any[] }),
+  const [summary, batchesResult] = await Promise.all([
+    ids.length ? staffInventorySummary(supabase) : Promise.resolve([]),
     // FIFO batches carry supplier costs; RLS (migration 013) only lets the
     // BOSS read them, so the query itself must be skipped for staff sessions.
     isBoss && ids.length
@@ -90,7 +86,7 @@ async function loadProducts(supabase: Supabase, isBoss: boolean) {
   }
 
   const summaryById: Record<string, any> = {};
-  for (const row of summary || []) summaryById[row.product_id] = row;
+  for (const row of summary) summaryById[row.product_id] = row;
   const batchesByProduct: Record<string, any[]> = {};
   for (const batch of batches) {
     if (!batchesByProduct[batch.product_id]) batchesByProduct[batch.product_id] = [];

@@ -36,10 +36,10 @@ export async function GET(request: Request) {
     .from("staff_messages")
     .select("id,sender_id,recipient_id,body,read_at,created_at")
     .or(`and(sender_id.eq.${s.user!.id},recipient_id.eq.${peer}),and(sender_id.eq.${peer},recipient_id.eq.${s.user!.id})`)
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(200);
   if (error) return dbErrorResponse(503);
-  return NextResponse.json({ contacts: contacts || [], messages: messages || [] });
+  return NextResponse.json({ contacts: contacts || [], messages: (messages || []).reverse() });
 }
 
 export async function POST(request: Request) {

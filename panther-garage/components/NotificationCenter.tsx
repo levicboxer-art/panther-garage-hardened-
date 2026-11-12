@@ -5,6 +5,7 @@ import { AlertTriangle, Bell, CheckCheck, CircleDollarSign, Info, Mail, RefreshC
 type Notice = { id: string; title: string; message: string; category: string; read_at: string | null; created_at: string };
 const categoryStyle: Record<string, { icon: typeof Bell; label: string; tone: string }> = {
   LOW_STOCK: { icon: AlertTriangle, label: "Stock alert", tone: "text-amber-300 bg-amber-300/10 border-amber-300/20" },
+  OUT_OF_STOCK: { icon: AlertTriangle, label: "Out of stock", tone: "text-red-300 bg-red-300/10 border-red-300/20" },
   APPROVAL: { icon: ShieldAlert, label: "Approval", tone: "text-orange-300 bg-orange-300/10 border-orange-300/20" },
   EXPENSE: { icon: CircleDollarSign, label: "Finance", tone: "text-cyan-300 bg-cyan-300/10 border-cyan-300/20" },
   PURCHASE: { icon: Bell, label: "Purchasing", tone: "text-violet-300 bg-violet-300/10 border-violet-300/20" },
@@ -36,7 +37,7 @@ export default function NotificationCenter({ role }: { role: "BOSS" | "EMPLOYEE"
     const response = await fetch("/api/notifications", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(id ? { id } : { mark_all: true }) });
     if (response.ok) void load();
   }
-  const highPriority = useMemo(() => items.filter((item) => !item.read_at && item.category === "LOW_STOCK").length, [items]);
+  const highPriority = useMemo(() => items.filter((item) => !item.read_at && ["LOW_STOCK", "OUT_OF_STOCK"].includes(item.category)).length, [items]);
 
   return (
     <div className="relative">
