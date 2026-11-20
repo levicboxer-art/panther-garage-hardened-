@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
@@ -20,6 +19,7 @@ import InventoryWorkspace from "@/components/InventoryWorkspace";
 import ImportWorkspace from "@/components/ImportWorkspace";
 import CatalogueReviewWorkspace from "@/components/CatalogueReviewWorkspace";
 import BIWorkspace from "@/components/BIWorkspace";
+import AssistantPanel from "@/components/AssistantPanel";
 import ShiftReportsWorkspace from "@/components/ShiftReportsWorkspace";
 import {
   LayoutDashboard,
@@ -44,7 +44,9 @@ import {
   Tags,
   PanelLeftClose,
   PanelLeftOpen,
+  BrainCircuit,
   ClipboardList,
+  Bot,
   ShieldAlert,
   MessageCircle,
 } from "lucide-react";
@@ -89,7 +91,7 @@ const nav = [
   ["Reports", FileBarChart],
   ["Shift reports", ClipboardList],
   ["Team chat", MessageCircle],
-  ["Insights", TrendingUp],
+  ["Insights", BrainCircuit],
   ["Settings", Settings],
 ] as const;
 
@@ -103,6 +105,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
   const [tab, setTab] = useState("Overview");
   const [theme, setTheme] = useState<DashboardTheme>("dark");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [products, setProducts] = useState(initialProducts);
   const [modal, setModal] = useState<"employee" | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -170,9 +173,12 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
   async function refresh() {
     const r = await fetch("/api/products", { cache: "no-store" });
     const j = await r.json();
-    if (r.ok) setProducts(j.products || []);
+    if (r.ok) {
+      setProducts(j.products || []);
+    }
     else setError(j.error || "Could not refresh products.");
     if (tab === "Employees") await loadEmployees();
+    return r.ok ? (j.products || []) : undefined;
   }
 
   async function loadEmployees() {
@@ -252,13 +258,9 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           }`}
         >
           <a href="/" className="flex items-center gap-3" title="Back to website">
-            <Image
-              src="/favicon.png"
-              alt="Panther Legacy Garage emblem"
-              width={36}
-              height={36}
-              className="h-9 w-9 shrink-0 rounded-lg object-contain"
-            />
+            <div className="w-9 h-9 rounded-lg bg-lime text-black grid place-items-center font-black shrink-0">
+              P
+            </div>
             {!sidebarCollapsed && (
               <div>
                 <b className="text-sm tracking-widest">PANTHER</b>
@@ -350,6 +352,17 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
               className="p-2 rounded-lg border border-line text-gray-400"
             >
               <RefreshCw size={16} />
+            </button>
+            <button
+              onClick={() => setAssistantOpen((v) => !v)}
+              title="Garage AI assistant"
+              aria-label="Garage AI assistant"
+              aria-pressed={assistantOpen}
+              className={`p-2 rounded-lg border transition ${
+                assistantOpen ? "border-lime text-lime bg-lime/10" : "border-line text-gray-400 hover:text-lime"
+              }`}
+            >
+              <Bot size={16} />
             </button>
             <NotificationCenter role={profile.role} />
             <div className="text-right hidden sm:block">
@@ -592,7 +605,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           )}
 
           {tab === "Sales" || tab === "Customers" ? (
-            <SalesWorkspace mode={tab} products={products} />
+            <SalesWorkspace mode={tab} products={products} onProductsChanged={refresh} />
           ) : null}
           {tab === "Bookings" ? <BookingsWorkspace /> : null}
           {tab === "Online Orders" ? <OrdersWorkspace /> : null}
@@ -717,6 +730,14 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
 
       {toast && <div className="toast">{toast}</div>}
 
+      {/* Header-triggered garage assistant: instant platform search + AI answers grounded in live data. */}
+      <AssistantPanel
+        open={assistantOpen}
+        onClose={() => setAssistantOpen(false)}
+        role={profile.role}
+        products={products as any}
+        onNavigate={setTab}
+      />
     </main>
   );
 }
