@@ -94,6 +94,7 @@ export function dbErrorResponse(status = 400, error?: unknown) {
     "Customer not found",
     "Each quantity must be a positive whole number",
     "A selected product is unavailable",
+    "Sale price cannot be below the listed price",
     "Product not found or inactive",
     "Insufficient available stock",
     "Discount cannot exceed subtotal",
