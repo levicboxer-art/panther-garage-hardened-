@@ -85,6 +85,12 @@ export function invalidBodyResponse(error: unknown) {
 export function dbErrorResponse(status = 400, error?: unknown) {
   if (error) console.error("Database operation failed", error);
   const message = error && typeof error === "object" && "message" in error && typeof error.message === "string" ? error.message : "";
+  if (/column reference [\"']unit_cost[\"'] is ambiguous/i.test(message)) {
+    return NextResponse.json(
+      { error: "The stock-costing database function is out of date. Ask the system administrator to apply supabase/migrations/021_sales_checkout_repair.sql, then retry." },
+      { status },
+    );
+  }
   const safeMessages = [
     "Not authorized",
     "Add at least one product",

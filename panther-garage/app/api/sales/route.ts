@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { dbErrorResponse, invalidBodyResponse, readJson } from "@/lib/api-security";
 import { flushBossAlertEmail } from "@/lib/alert-delivery";
+import { staffInventorySummary } from "@/lib/inventory-summary";
 async function staff(){
  const supabase=await createClient(); const {data:{user}}=await supabase.auth.getUser();
  if(!user)return {supabase,user:null,response:NextResponse.json({error:"Unauthorized"},{status:401})};
@@ -11,9 +12,48 @@ async function staff(){
 }
 export async function GET(){
  const s=await staff();if(s.response)return s.response;
- const {data,error}=await s.supabase.from("sales").select("id,invoice_number,status,payment_method,subtotal,discount,total,amount_paid,balance_due,created_at,customers(full_name,phone),sale_items(product_name,sku,quantity,unit_price,line_total)").order("created_at",{ascending:false}).limit(100);
+ const isBoss=s.role==="BOSS";
+ const itemFields=isBoss
+  ? "product_id,product_name,sku,quantity,unit_price,unit_cost,line_total"
+  : "product_id,product_name,sku,quantity,unit_price,line_total";
+ const [salesResult,stockResult]=await Promise.all([
+  s.supabase.from("sales").select(`id,invoice_number,status,payment_method,subtotal,discount,total,amount_paid,balance_due,created_at,customers(full_name,phone),sale_items(${itemFields})`).order("created_at",{ascending:false}).limit(100),
+  staffInventorySummary(s.supabase).catch(error=>{
+   console.error("Could not load current stock for invoice details",error);
+   return [];
+  }),
+ ]);
+ const {data,error}=salesResult;
  if(error)return dbErrorResponse(503,error);
- return NextResponse.json({sales:data||[]});
+ const stockByProduct=new Map(stockResult.map(row=>[row.product_id,row.physical_stock]));
+ const sales=(data||[]).map((sale:any)=>{
+  const lineItems=sale.sale_items||[];
+  const subtotal=Number(sale.subtotal)||0;
+  const discount=Number(sale.discount)||0;
+  return {
+   ...sale,
+   sale_items:lineItems.map((item:any)=>{
+    const quantity=Number(item.quantity)||0;
+    const lineTotal=Number(item.line_total)||0;
+    const allocatedDiscount=subtotal>0?Math.round((discount*lineTotal/subtotal)*100)/100:0;
+    const result={
+     ...item,
+     quantity,
+     unit_price:Number(item.unit_price)||0,
+     line_total:lineTotal,
+     current_stock:stockByProduct.get(item.product_id)??null,
+     effective_unit_price:quantity>0?(lineTotal-allocatedDiscount)/quantity:0,
+    } as Record<string,unknown>;
+    if(isBoss){
+     const unitCost=Number(item.unit_cost)||0;
+     result.unit_cost=unitCost;
+     result.gross_profit=Math.round((lineTotal-allocatedDiscount-unitCost*quantity)*100)/100;
+    }
+    return result;
+   }),
+  };
+ });
+ return NextResponse.json({sales,is_boss:isBoss});
 }
 export async function POST(req:Request){
  const s=await staff();if(s.response)return s.response;

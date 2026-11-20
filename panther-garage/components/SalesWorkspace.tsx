@@ -1,32 +1,100 @@
 "use client";
-import { useEffect, useMemo, useState } from "react";
-import { Plus, RefreshCw, ReceiptText, Users, ShoppingCart, Search, Printer } from "lucide-react";
-type Product={id:string;name:string;sku:string;stock:number;selling_price:number;active:boolean};
-type Customer={id:string;full_name:string;phone:string|null;email:string|null;motorcycle_details:string|null};
-type Sale={id:string;invoice_number:string;status:string;payment_method:string;subtotal:number;discount:number;total:number;amount_paid:number;balance_due:number;created_at:string;customers:{full_name:string;phone:string|null}|null;sale_items:{product_name:string;sku:string;quantity:number;unit_price:number;line_total:number}[]};
-type SoldItem={product_id:string;product_name:string;sku:string;quantity:number;unit_price:number;line_total:number;remaining:number|null};
-const money=(n:number)=>new Intl.NumberFormat("en-RW",{style:"currency",currency:"RWF",maximumFractionDigits:0}).format(n);
-export default function SalesWorkspace({mode,products,onProductsChanged}:{mode:"Sales"|"Customers";products:Product[];onProductsChanged?:()=>Promise<Product[]|void>|Product[]|void}){
- const [customers,setCustomers]=useState<Customer[]>([]);const [sales,setSales]=useState<Sale[]>([]);const [loading,setLoading]=useState(true);const [error,setError]=useState("");const [notice,setNotice]=useState("");
- const [customerName,setCustomerName]=useState("");const [phone,setPhone]=useState("");const [email,setEmail]=useState("");const [bike,setBike]=useState("");
- const [selectedCustomer,setSelectedCustomer]=useState("");const [productId,setProductId]=useState("");const [qty,setQty]=useState("1");const [cart,setCart]=useState<{product_id:string;quantity:number}[]>([]);const [payment,setPayment]=useState("CASH");const [paid,setPaid]=useState("");const [discount,setDiscount]=useState("0");const [saving,setSaving]=useState(false);const [lastInvoice,setLastInvoice]=useState<{invoice_number:string;total:number;amount_paid:number;balance_due:number;items:SoldItem[]}|null>(null);const [search,setSearch]=useState("");
- async function load(){setLoading(true);setError("");const [c,s]=await Promise.all([fetch("/api/customers",{cache:"no-store"}),fetch("/api/sales",{cache:"no-store"})]);const cj=await c.json();const sj=await s.json();if(c.ok)setCustomers(cj.customers||[]);else setError(cj.error||"Could not load customers");if(s.ok)setSales(sj.sales||[]);else setError(sj.error||"Could not load sales");setLoading(false)}
- useEffect(()=>{load()},[]);
- const cartRows=cart.map(item=>({...item,product:products.find(p=>p.id===item.product_id)})).filter(x=>x.product);
- const subtotal=cartRows.reduce((sum,x)=>sum+x.product!.selling_price*x.quantity,0);const total=Math.max(0,subtotal-Number(discount||0));const received=Number(paid||0);const additionalGain=cartRows.length===1&&received>total?received-total:0;
- const visibleCustomers=customers.filter(c=>(c.full_name+" "+(c.phone||"")).toLowerCase().includes(search.toLowerCase()));
- async function addCustomer(e:React.FormEvent){e.preventDefault();setSaving(true);setError("");const r=await fetch("/api/customers",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({full_name:customerName,phone,email,motorcycle_details:bike})});const j=await r.json();setSaving(false);if(!r.ok){setError(j.error||"Could not save customer");return;}setCustomers([j.customer,...customers]);setCustomerName("");setPhone("");setEmail("");setBike("");setSelectedCustomer(j.customer.id);setNotice("Customer saved successfully.")}
- function addToCart(){const p=products.find(x=>x.id===productId);const n=Number(qty);if(!p||!Number.isInteger(n)||n<1){setError("Choose a product and valid quantity.");return;}const already=cart.find(x=>x.product_id===productId)?.quantity||0;if(already+n>p.stock){setError(`Only ${p.stock} units of ${p.name} are currently in stock.`);return;}setCart(old=>old.some(x=>x.product_id===productId)?old.map(x=>x.product_id===productId?{...x,quantity:x.quantity+n}:x):[...old,{product_id:productId,quantity:n}]);setError("")}
- async function checkout(e:React.FormEvent){e.preventDefault();setSaving(true);setError("");const salePriceOverride=cartRows.length===1&&received>total?(received+Number(discount||0))/cartRows[0].quantity:undefined;const saleItems=cart.map(item=>({...item,...(salePriceOverride===undefined?{}:{unit_price:salePriceOverride})}));const soldItems:SoldItem[]=cartRows.map(x=>({product_id:x.product_id,product_name:x.product!.name,sku:x.product!.sku,quantity:x.quantity,unit_price:salePriceOverride??x.product!.selling_price,line_total:(salePriceOverride??x.product!.selling_price)*x.quantity,remaining:null}));const r=await fetch("/api/sales",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({customer_id:selectedCustomer||null,items:saleItems,payment_method:payment,amount_paid:received,discount:Number(discount||0)})});const j=await r.json();setSaving(false);if(!r.ok){setError(j.error||"Sale could not be completed");return;}const refreshedProducts=await onProductsChanged?.();const currentProducts=Array.isArray(refreshedProducts)?refreshedProducts:products;for(const item of soldItems)item.remaining=currentProducts.find(p=>p.id===item.product_id)?.stock??null;setLastInvoice({...j.sale,items:soldItems});setCart([]);setPaid("");setDiscount("0");setNotice(`Sale ${j.sale.invoice_number} completed. Stock updated.`);await load()}
- return <div className="space-y-5">
-  <div className="flex items-center justify-between gap-3"><div><div className="tag">PANTHER GARAGE · OPERATIONS</div><h2 className="text-xl font-bold mt-2">{mode==="Sales"?"Point of sale & invoices":"Customer register"}</h2><p className="muted text-xs mt-1">{mode==="Sales"?"Record counter sales, collect payment and deduct stock atomically.":"Keep customer contact and motorcycle details in one place."}</p></div><button onClick={load} className="btn btn-ghost text-xs"><RefreshCw size={14}/> Refresh</button></div>
-  {error&&<div className="card p-3 text-sm text-red-300">{error}</div>}{notice&&<div className="card p-3 text-sm text-lime">{notice}</div>}
-  {mode==="Customers"?<div className="grid xl:grid-cols-[.8fr_1.2fr] gap-4"><form onSubmit={addCustomer} className="card p-5 space-y-3"><h3 className="font-bold flex items-center gap-2"><Plus size={16}/> Register customer</h3><label className="block text-xs muted">Full name<input className="field mt-1" required value={customerName} onChange={e=>setCustomerName(e.target.value)}/></label><label className="block text-xs muted">Phone number<input className="field mt-1" value={phone} onChange={e=>setPhone(e.target.value)} placeholder="07…"/></label><label className="block text-xs muted">Email (optional)<input className="field mt-1" type="email" value={email} onChange={e=>setEmail(e.target.value)}/></label><label className="block text-xs muted">Motorcycle details<input className="field mt-1" value={bike} onChange={e=>setBike(e.target.value)} placeholder="e.g. TVS HLX 125, plate…"/></label><button disabled={saving} className="btn btn-primary w-full">{saving?"Saving…":"Save customer"}</button></form><div className="card"><div className="p-5 flex items-center justify-between"><h3 className="font-bold">Customers <span className="muted">({customers.length})</span></h3><div className="flex items-center gap-2 border border-line rounded-lg px-3 py-2"><Search size={14}/><input className="bg-transparent outline-none text-xs w-36" placeholder="Search customers" value={search} onChange={e=>setSearch(e.target.value)}/></div></div><div className="table-wrap"><table><thead><tr><th>NAME</th><th>PHONE</th><th>MOTORCYCLE</th><th>EMAIL</th></tr></thead><tbody>{visibleCustomers.map(c=><tr key={c.id}><td className="font-semibold">{c.full_name}</td><td>{c.phone||"—"}</td><td>{c.motorcycle_details||"—"}</td><td>{c.email||"—"}</td></tr>)}</tbody></table>{!visibleCustomers.length&&<p className="p-5 muted text-sm">No customers found.</p>}</div></div></div>:<>
-  <div className="grid xl:grid-cols-[1fr_.9fr] gap-4"><div className="card p-5 space-y-4"><div className="flex items-center gap-2 font-bold"><ShoppingCart size={17}/> New sale</div><label className="block text-xs muted">Customer (optional)<select className="field mt-1" value={selectedCustomer} onChange={e=>setSelectedCustomer(e.target.value)}><option value="">Walk-in customer</option>{customers.map(c=><option value={c.id} key={c.id}>{c.full_name}{c.phone?` · ${c.phone}`:""}</option>)}</select></label><div className="grid sm:grid-cols-[1fr_100px_auto] gap-2 items-end"><label className="block text-xs muted">Product<select className="field mt-1" value={productId} onChange={e=>setProductId(e.target.value)}><option value="">Select product</option>{products.filter(p=>p.active&&p.stock>0).map(p=><option key={p.id} value={p.id}>{p.name} · {p.stock} in stock · {money(p.selling_price)}</option>)}</select></label><label className="block text-xs muted">Qty<input className="field mt-1" type="number" min="1" step="1" value={qty} onChange={e=>setQty(e.target.value)}/></label><button type="button" onClick={addToCart} className="btn btn-ghost"><Plus size={15}/> Add</button></div><div className="table-wrap"><table><thead><tr><th>ITEM</th><th>QTY</th><th>PRICE</th><th>TOTAL</th><th></th></tr></thead><tbody>{cartRows.map(x=><tr key={x.product_id}><td>{x.product!.name}</td><td>{x.quantity}</td><td>{money(x.product!.selling_price)}</td><td>{money(x.quantity*x.product!.selling_price)}</td><td><button type="button" className="text-red-300" onClick={()=>setCart(cart.filter(c=>c.product_id!==x.product_id))}>Remove</button></td></tr>)}</tbody></table>{!cartRows.length&&<p className="p-4 text-xs muted">Add products to start an invoice.</p>}</div><div className="flex justify-between text-sm"><span className="muted">Subtotal</span><b>{money(subtotal)}</b></div><label className="block text-xs muted">Discount (RWF)<input className="field mt-1" type="number" min="0" step="1" max={subtotal} value={discount} onChange={e=>setDiscount(e.target.value)}/></label><div className="flex justify-between border-t border-line pt-3"><span className="font-bold">Total due</span><strong className="text-xl lime">{money(total)}</strong></div></div>
-  <form onSubmit={checkout} className="card p-5 space-y-4"><h3 className="font-bold">Payment & completion</h3><label className="block text-xs muted">Payment method<select className="field mt-1" value={payment} onChange={e=>setPayment(e.target.value)}><option value="CASH">Cash</option><option value="MOBILE_MONEY">Mobile Money</option><option value="BANK_TRANSFER">Bank transfer</option><option value="CARD">Card</option><option value="CREDIT">Credit / partial payment</option></select></label><label className="block text-xs muted">Amount received (RWF)<input className="field mt-1" type="number" min="0" step="1" required value={paid} onChange={e=>setPaid(e.target.value)} placeholder={payment==="CREDIT"?"Enter amount received":"Enter full amount"}/></label>{additionalGain>0&&<div className="rounded-lg border border-lime/40 bg-lime/10 p-3 text-sm"><div className="flex justify-between"><span className="muted">Additional gain</span><b className="lime">{money(additionalGain)}</b></div><p className="text-[11px] muted mt-1">This one-item sale will be invoiced at {money(received)} instead of the listed {money(total)}.</p></div>}<p className="text-xs muted">For standard sales, payment must equal the invoice total. For a one-item sale, a higher amount is recorded as the actual sale price and shown as additional gain. Credit supports a remaining balance.</p><button disabled={saving||!cart.length||total<0} className="btn btn-primary w-full">{saving?"Processing…":"Complete sale & issue invoice"}</button><div className="text-[11px] muted">Stock is deducted inside the database transaction using FIFO cost batches. If stock is insufficient, the entire sale is rejected.</div></form></div>
-  <div className="card"><div className="p-5 flex items-center justify-between"><h3 className="font-bold">Recent invoices</h3><span className="muted text-xs">Latest 100</span></div><div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>SOLD PARTS / QTY</th><th>CUSTOMER</th><th>TOTAL</th><th>BALANCE</th></tr></thead><tbody>{sales.map(s=><tr key={s.id}><td className="font-semibold">{s.invoice_number}</td><td>{new Date(s.created_at).toLocaleDateString()}</td><td>{(s.sale_items||[]).map((item,i)=><div key={`${s.id}-${i}`} className="text-xs"><b>{item.product_name}</b> <span className="muted">· {item.quantity} sold</span></div>)}</td><td>{s.customers?.full_name||"Walk-in"}</td><td>{money(Number(s.total))}</td><td className={Number(s.balance_due)>0?"text-amber-300":"lime"}>{money(Number(s.balance_due))}</td></tr>)}</tbody></table>{!sales.length&&<p className="p-5 muted text-sm">No invoices have been issued yet.</p>}</div></div>
-  {lastInvoice&&<div className="card p-5 flex flex-wrap items-center justify-between gap-3"><div><div className="tag">SALE COMPLETED · STOCK UPDATED</div><h3 className="font-bold mt-1">{lastInvoice.invoice_number}</h3><p className="text-xs muted">Exact parts sold and remaining stock:</p><div className="mt-3 space-y-2">{lastInvoice.items.map(item=><div key={item.product_id} className="flex justify-between gap-3 text-sm"><span><b>{item.product_name}</b><span className="muted"> · SKU {item.sku}</span></span><span className="text-right"><b className="lime">{item.quantity} sold</b><span className="block text-xs muted">{item.remaining==null?"Remaining unavailable":`${item.remaining} remaining`}</span></span></div>)}</div></div><button className="btn btn-ghost" onClick={()=>window.print()}><Printer size={15}/> Print invoice summary</button></div>}
-  </>}
-  {loading&&<p className="muted text-xs">Loading live records…</p>}
- </div>
+
+import { useEffect, useState } from "react";
+import { Plus, RefreshCw, ShoppingCart, Search } from "lucide-react";
+
+type Product = { id: string; name: string; sku: string; stock: number; selling_price: number; active: boolean };
+type Customer = { id: string; full_name: string; phone: string | null; email: string | null; motorcycle_details: string | null };
+const money = (n: number) => new Intl.NumberFormat("en-RW", { style: "currency", currency: "RWF", maximumFractionDigits: 0 }).format(n);
+
+export default function SalesWorkspace({
+  mode,
+  products,
+  onProductsChanged,
+}: {
+  mode: "Sales" | "Customers";
+  products: Product[];
+  onProductsChanged?: () => Promise<Product[] | void> | Product[] | void;
+}) {
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [customerName, setCustomerName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [email, setEmail] = useState("");
+  const [bike, setBike] = useState("");
+  const [selectedCustomer, setSelectedCustomer] = useState("");
+  const [productId, setProductId] = useState("");
+  const [qty, setQty] = useState("1");
+  const [cart, setCart] = useState<{ product_id: string; quantity: number }[]>([]);
+  const [payment, setPayment] = useState("CASH");
+  const [paid, setPaid] = useState("");
+  const [discount, setDiscount] = useState("0");
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState("");
+
+  async function load() {
+    setLoading(true);
+    setError("");
+    const customerResponse = await fetch("/api/customers", { cache: "no-store" });
+    const customerJson = await customerResponse.json();
+    if (customerResponse.ok) setCustomers(customerJson.customers || []);
+    else setError(customerJson.error || "Could not load customers");
+    setLoading(false);
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  const cartRows = cart.map(item => ({ ...item, product: products.find(product => product.id === item.product_id) })).filter(item => item.product);
+  const subtotal = cartRows.reduce((sum, item) => sum + item.product!.selling_price * item.quantity, 0);
+  const total = Math.max(0, subtotal - Number(discount || 0));
+  const received = Number(paid || 0);
+  const additionalGain = cartRows.length === 1 && received > total ? received - total : 0;
+  const visibleCustomers = customers.filter(customer => (customer.full_name + " " + (customer.phone || "")).toLowerCase().includes(search.toLowerCase()));
+
+  async function addCustomer(event: React.FormEvent) {
+    event.preventDefault(); setSaving(true); setError("");
+    const response = await fetch("/api/customers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ full_name: customerName, phone, email, motorcycle_details: bike }) });
+    const json = await response.json(); setSaving(false);
+    if (!response.ok) { setError(json.error || "Could not save customer"); return; }
+    setCustomers([json.customer, ...customers]); setCustomerName(""); setPhone(""); setEmail(""); setBike(""); setSelectedCustomer(json.customer.id); setNotice("Customer saved successfully.");
+  }
+
+  function addToCart() {
+    const product = products.find(item => item.id === productId); const amount = Number(qty);
+    if (!product || !Number.isInteger(amount) || amount < 1) { setError("Choose a product and valid quantity."); return; }
+    const already = cart.find(item => item.product_id === productId)?.quantity || 0;
+    if (already + amount > product.stock) { setError(`Only ${product.stock} units of ${product.name} are currently in stock.`); return; }
+    setCart(old => old.some(item => item.product_id === productId ? true : false)
+      ? old.map(item => item.product_id === productId ? { ...item, quantity: item.quantity + amount } : item)
+      : [...old, { product_id: productId, quantity: amount }]);
+    setError("");
+  }
+
+  async function checkout(event: React.FormEvent) {
+    event.preventDefault(); setSaving(true); setError("");
+    const override = cartRows.length === 1 && received > total ? (received + Number(discount || 0)) / cartRows[0].quantity : undefined;
+    const saleItems = cart.map(item => ({ ...item, ...(override === undefined ? {} : { unit_price: override }) }));
+    const response = await fetch("/api/sales", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ customer_id: selectedCustomer || null, items: saleItems, payment_method: payment, amount_paid: received, discount: Number(discount || 0) }) });
+    const json = await response.json(); setSaving(false);
+    if (!response.ok) { setError(json.error || "Sale could not be completed"); return; }
+    await onProductsChanged?.();
+    setCart([]); setPaid(""); setDiscount("0"); setNotice(`Sale ${json.sale.invoice_number} completed. Stock updated. Find it in Recent invoices.`); await load();
+  }
+
+  return <div className="space-y-5">
+    <div className="flex items-center justify-between gap-3"><div><div className="tag">PANTHER GARAGE · OPERATIONS</div><h2 className="text-xl font-bold mt-2">{mode === "Sales" ? "Point of sale" : "Customer register"}</h2><p className="muted text-xs mt-1">{mode === "Sales" ? "Record counter sales, collect payment and deduct stock atomically." : "Keep customer contact and motorcycle details in one place."}</p></div><button onClick={() => void load()} className="btn btn-ghost text-xs"><RefreshCw size={14}/> Refresh</button></div>
+    {error && <div className="card p-3 text-sm text-red-300">{error}</div>}{notice && <div className="card p-3 text-sm text-lime">{notice}</div>}
+    {mode === "Customers" ? <div className="grid xl:grid-cols-[.8fr_1.2fr] gap-4">
+      <form onSubmit={addCustomer} className="card p-5 space-y-3"><h3 className="font-bold flex items-center gap-2"><Plus size={16}/> Register customer</h3><label className="block text-xs muted">Full name<input className="field mt-1" required value={customerName} onChange={event => setCustomerName(event.target.value)}/></label><label className="block text-xs muted">Phone number<input className="field mt-1" value={phone} onChange={event => setPhone(event.target.value)} placeholder="07…"/></label><label className="block text-xs muted">Email (optional)<input className="field mt-1" type="email" value={email} onChange={event => setEmail(event.target.value)}/></label><label className="block text-xs muted">Motorcycle details<input className="field mt-1" value={bike} onChange={event => setBike(event.target.value)} placeholder="e.g. TVS HLX 125, plate…"/></label><button disabled={saving} className="btn btn-primary w-full">{saving ? "Saving…" : "Save customer"}</button></form>
+      <div className="card"><div className="p-5 flex items-center justify-between"><h3 className="font-bold">Customers <span className="muted">({customers.length})</span></h3><div className="flex items-center gap-2 border border-line rounded-lg px-3 py-2"><Search size={14}/><input className="bg-transparent outline-none text-xs w-36" placeholder="Search customers" value={search} onChange={event => setSearch(event.target.value)}/></div></div><div className="table-wrap"><table><thead><tr><th>NAME</th><th>PHONE</th><th>MOTORCYCLE</th><th>EMAIL</th></tr></thead><tbody>{visibleCustomers.map(customer => <tr key={customer.id}><td className="font-semibold">{customer.full_name}</td><td>{customer.phone || "—"}</td><td>{customer.motorcycle_details || "—"}</td><td>{customer.email || "—"}</td></tr>)}</tbody></table>{!visibleCustomers.length && <p className="p-5 muted text-sm">No customers found.</p>}</div></div>
+    </div> : <>
+      <div className="grid xl:grid-cols-[1fr_.9fr] gap-4">
+        <div className="card p-5 space-y-4"><div className="flex items-center gap-2 font-bold"><ShoppingCart size={17}/> New sale</div><label className="block text-xs muted">Customer (optional)<select className="field mt-1" value={selectedCustomer} onChange={event => setSelectedCustomer(event.target.value)}><option value="">Walk-in customer</option>{customers.map(customer => <option value={customer.id} key={customer.id}>{customer.full_name}{customer.phone ? ` · ${customer.phone}` : ""}</option>)}</select></label><div className="grid sm:grid-cols-[1fr_100px_auto] gap-2 items-end"><label className="block text-xs muted">Product<select className="field mt-1" value={productId} onChange={event => setProductId(event.target.value)}><option value="">Select product</option>{products.filter(product => product.active && product.stock > 0).map(product => <option key={product.id} value={product.id}>{product.name} · {product.stock} in stock · {money(product.selling_price)}</option>)}</select></label><label className="block text-xs muted">Qty<input className="field mt-1" type="number" min="1" step="1" value={qty} onChange={event => setQty(event.target.value)}/></label><button type="button" onClick={addToCart} className="btn btn-ghost"><Plus size={15}/> Add</button></div><div className="table-wrap"><table><thead><tr><th>ITEM</th><th>QTY</th><th>PRICE</th><th>TOTAL</th><th></th></tr></thead><tbody>{cartRows.map(item => <tr key={item.product_id}><td>{item.product!.name}</td><td>{item.quantity}</td><td>{money(item.product!.selling_price)}</td><td>{money(item.quantity * item.product!.selling_price)}</td><td><button type="button" className="text-red-300" onClick={() => setCart(cart.filter(row => row.product_id !== item.product_id))}>Remove</button></td></tr>)}</tbody></table>{!cartRows.length && <p className="p-4 text-xs muted">Add products to start an invoice.</p>}</div><div className="flex justify-between text-sm"><span className="muted">Subtotal</span><b>{money(subtotal)}</b></div><label className="block text-xs muted">Discount (RWF)<input className="field mt-1" type="number" min="0" step="1" max={subtotal} value={discount} onChange={event => setDiscount(event.target.value)}/></label><div className="flex justify-between border-t border-line pt-3"><span className="font-bold">Total due</span><strong className="text-xl lime">{money(total)}</strong></div></div>
+        <form onSubmit={checkout} className="card p-5 space-y-4"><h3 className="font-bold">Payment & completion</h3><label className="block text-xs muted">Payment method<select className="field mt-1" value={payment} onChange={event => setPayment(event.target.value)}><option value="CASH">Cash</option><option value="MOBILE_MONEY">Mobile Money</option><option value="BANK_TRANSFER">Bank transfer</option><option value="CARD">Card</option><option value="CREDIT">Credit / partial payment</option></select></label><label className="block text-xs muted">Amount received (RWF)<input className="field mt-1" type="number" min="0" step="1" required value={paid} onChange={event => setPaid(event.target.value)} placeholder={payment === "CREDIT" ? "Enter amount received" : "Enter full amount"}/></label>{additionalGain > 0 && <div className="rounded-lg border border-lime/40 bg-lime/10 p-3 text-sm"><div className="flex justify-between"><span className="muted">Additional gain</span><b className="lime">{money(additionalGain)}</b></div><p className="text-[11px] muted mt-1">This one-item sale will be invoiced at {money(received)} instead of the listed {money(total)}.</p></div>}<p className="text-xs muted">For standard sales, payment must equal the invoice total. For a one-item sale, a higher amount is recorded as the actual sale price and shown as additional gain. Credit supports a remaining balance.</p><button disabled={saving || !cart.length || total < 0} className="btn btn-primary w-full">{saving ? "Processing…" : "Complete sale & issue invoice"}</button><div className="text-[11px] muted">Stock is deducted inside the database transaction using FIFO cost batches. If stock is insufficient, the entire sale is rejected.</div></form>
+      </div>
+    </>}
+    {loading && <p className="muted text-xs">Loading live records…</p>}
+  </div>;
 }
