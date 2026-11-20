@@ -12,7 +12,7 @@ async function staff(){
 export async function GET(){
  const s=await staff();if(s.response)return s.response;
  const {data,error}=await s.supabase.from("sales").select("id,invoice_number,status,payment_method,subtotal,discount,total,amount_paid,balance_due,created_at,customers(full_name,phone),sale_items(product_name,sku,quantity,unit_price,line_total)").order("created_at",{ascending:false}).limit(100);
- if(error)return dbErrorResponse(503);
+ if(error)return dbErrorResponse(503,error);
  return NextResponse.json({sales:data||[]});
 }
 export async function POST(req:Request){
@@ -25,7 +25,7 @@ export async function POST(req:Request){
  const paid=Number(b.amount_paid);const discount=Number(b.discount||0);
  if(!["CASH","MOBILE_MONEY","BANK_TRANSFER","CARD","CREDIT"].includes(String(b.payment_method||"CASH").toUpperCase())||!Number.isFinite(paid)||paid<0||paid>100000000||!Number.isFinite(discount)||discount<0||discount>100000000)return NextResponse.json({error:"Enter valid payment and discount amounts."},{status:400});
  const {data,error}=await s.supabase.rpc("create_pos_sale",{p_customer_id:b.customer_id||null,p_items:items,p_payment_method:String(b.payment_method||"CASH").toUpperCase(),p_amount_paid:paid,p_discount:discount,p_notes:String(b.notes||"")||null});
- if(error)return dbErrorResponse(400);
+ if(error)return dbErrorResponse(400,error);
  const {data:sale}=await s.supabase.from("sales").select("id,invoice_number,total,amount_paid,balance_due,created_at").eq("id",data).single();
  await flushBossAlertEmail();
  return NextResponse.json({sale,message:"Sale completed and stock deducted using FIFO."},{status:201});

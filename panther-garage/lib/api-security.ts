@@ -82,8 +82,30 @@ export function invalidBodyResponse(error: unknown) {
   );
 }
 
-export function dbErrorResponse(status = 400) {
-  return NextResponse.json({ error: "The requested operation could not be completed." }, { status });
+export function dbErrorResponse(status = 400, error?: unknown) {
+  if (error) console.error("Database operation failed", error);
+  const message = error && typeof error === "object" && "message" in error && typeof error.message === "string" ? error.message : "";
+  const safeMessages = [
+    "Not authorized",
+    "Add at least one product",
+    "Invalid payment method",
+    "Discount cannot be negative",
+    "Amount paid cannot be negative",
+    "Customer not found",
+    "Each quantity must be a positive whole number",
+    "A selected product is unavailable",
+    "Product not found or inactive",
+    "Insufficient available stock",
+    "Discount cannot exceed subtotal",
+    "Amount paid cannot exceed invoice total",
+    "For non-credit payments, amount paid must equal the total",
+    "Quantity must be greater than zero",
+    "Unsupported stock issue type",
+    "FIFO allocation incomplete; transaction rolled back",
+  ];
+  const safeMessage = safeMessages.find(candidate => message === candidate || message.startsWith(`${candidate}:`));
+  const priceMessage = message.match(/^Set a selling price for (.+) before selling$/)?.[0];
+  return NextResponse.json({ error: safeMessage || priceMessage || "The requested operation could not be completed." }, { status });
 }
 
 export function serverErrorResponse() {
