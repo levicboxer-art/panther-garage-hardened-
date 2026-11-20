@@ -354,3 +354,59 @@ export async function PATCH(request: Request) {
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
   return NextResponse.json({ product: data });
 }
+
+export async function DELETE(request: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("role,active")
+    .eq("id", user.id)
+    .single();
+  if (!profile?.active || profile.role !== "BOSS") {
+    return NextResponse.json({ error: "Only an active BOSS can remove products." }, { status: 403 });
+  }
+
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid request body." }, { status: 400 });
+  }
+
+  const id = String(body?.id || "");
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) {
+    return NextResponse.json({ error: "Select a valid product first." }, { status: 400 });
+  }
+
+  const { data, error } = await supabase.rpc("delete_product_if_unreferenced", {
+    p_product_id: id,
+  });
+  if (error) {
+    if (error.code === "P0001") {
+      const references = error.details?.replace(/^Referenced by:\s*/i, "").trim();
+      return NextResponse.json(
+        {
+          error: references
+            ? `Cannot remove this product because records still reference it (${references}).`
+            : "Cannot remove this product because records still reference it.",
+        },
+        { status: 409 },
+      );
+    }
+    if (error.code === "P0002") {
+      return NextResponse.json({ error: "That product no longer exists. Refresh the inventory." }, { status: 404 });
+    }
+    if (error.code === "42501") {
+      return NextResponse.json({ error: "Only an active BOSS can remove products." }, { status: 403 });
+    }
+    console.error("Product removal failed:", error.message);
+    return NextResponse.json({ error: "Could not remove the product safely." }, { status: 500 });
+  }
+
+  return NextResponse.json({ deleted: true, product_id: id, result: data });
+}

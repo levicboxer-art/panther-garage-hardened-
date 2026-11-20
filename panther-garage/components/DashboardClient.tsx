@@ -20,7 +20,6 @@ import InventoryWorkspace from "@/components/InventoryWorkspace";
 import ImportWorkspace from "@/components/ImportWorkspace";
 import CatalogueReviewWorkspace from "@/components/CatalogueReviewWorkspace";
 import BIWorkspace from "@/components/BIWorkspace";
-import AssistantPanel from "@/components/AssistantPanel";
 import ShiftReportsWorkspace from "@/components/ShiftReportsWorkspace";
 import {
   LayoutDashboard,
@@ -45,9 +44,7 @@ import {
   Tags,
   PanelLeftClose,
   PanelLeftOpen,
-  BrainCircuit,
   ClipboardList,
-  Bot,
   ShieldAlert,
   MessageCircle,
 } from "lucide-react";
@@ -92,7 +89,7 @@ const nav = [
   ["Reports", FileBarChart],
   ["Shift reports", ClipboardList],
   ["Team chat", MessageCircle],
-  ["Insights", BrainCircuit],
+  ["Insights", TrendingUp],
   ["Settings", Settings],
 ] as const;
 
@@ -106,7 +103,6 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
   const [tab, setTab] = useState("Overview");
   const [theme, setTheme] = useState<DashboardTheme>("dark");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [assistantOpen, setAssistantOpen] = useState(false);
   const [products, setProducts] = useState(initialProducts);
   const [modal, setModal] = useState<"employee" | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -354,17 +350,6 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
               className="p-2 rounded-lg border border-line text-gray-400"
             >
               <RefreshCw size={16} />
-            </button>
-            <button
-              onClick={() => setAssistantOpen((v) => !v)}
-              title="Garage AI assistant"
-              aria-label="Garage AI assistant"
-              aria-pressed={assistantOpen}
-              className={`p-2 rounded-lg border transition ${
-                assistantOpen ? "border-lime text-lime bg-lime/10" : "border-line text-gray-400 hover:text-lime"
-              }`}
-            >
-              <Bot size={16} />
             </button>
             <NotificationCenter role={profile.role} />
             <div className="text-right hidden sm:block">
@@ -732,14 +717,6 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
 
       {toast && <div className="toast">{toast}</div>}
 
-      {/* Header-triggered garage assistant: instant platform search + AI answers grounded in live data. */}
-      <AssistantPanel
-        open={assistantOpen}
-        onClose={() => setAssistantOpen(false)}
-        role={profile.role}
-        products={products as any}
-        onNavigate={setTab}
-      />
     </main>
   );
 }

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  BrainCircuit,
   IndianRupee,
   Lightbulb,
   Loader2,
@@ -11,7 +10,6 @@ import {
   Repeat2,
   ScrollText,
   ShieldCheck,
-  Sparkles,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -201,7 +199,7 @@ export default function BIWorkspace() {
         label: "Repeat customer rate",
         value: `${k.repeat_rate_pct}%`,
         sub: k.credit_balance > 0 ? `Credit outstanding: ${money(k.credit_balance)}` : "No unpaid credit balance",
-        icon: k.credit_balance > 0 ? AlertTriangle : Sparkles,
+        icon: k.credit_balance > 0 ? AlertTriangle : Repeat2,
         warn: k.credit_balance > 0,
       },
     ];
@@ -234,7 +232,7 @@ export default function BIWorkspace() {
       <div className="card flex flex-wrap items-center justify-between gap-3 p-5">
         <div>
           <div className="tag flex items-center gap-2">
-            <BrainCircuit size={14} /> BUSINESS INTELLIGENCE · AI INSIGHTS · BOSS ONLY
+            <TrendingUp size={14} /> BUSINESS INTELLIGENCE · OPERATIONAL ANALYTICS · BOSS ONLY
           </div>
           <h3 className="mt-1 text-xl font-bold">Every number below comes from your own records.</h3>
           <p className="mt-1 text-xs muted">
@@ -592,7 +590,7 @@ export default function BIWorkspace() {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="flex items-center gap-2">
-              <Sparkles size={17} className="lime" />
+              <TrendingUp size={17} className="lime" />
               <h3 className="font-bold">Demand analysis &amp; forecast</h3>
             </div>
             <p className="mt-1 text-xs muted">{data.demand.forecast.method}</p>

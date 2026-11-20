@@ -141,6 +141,9 @@ export default function InventoryWorkspace({
   const [receiptQuantity, setReceiptQuantity] = useState("1");
   const [receiptCost, setReceiptCost] = useState("0");
   const [receiptReference, setReceiptReference] = useState("");
+  const [removeTarget, setRemoveTarget] = useState<InventoryRow | null>(null);
+  const [removeError, setRemoveError] = useState("");
+  const [removing, setRemoving] = useState(false);
 
   const canEdit = role === "BOSS";
 
@@ -412,6 +415,31 @@ export default function InventoryWorkspace({
     }
   }
 
+  async function removeProduct() {
+    if (!removeTarget) return;
+    setRemoving(true);
+    setRemoveError("");
+    try {
+      const response = await fetch("/api/products", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: removeTarget.id }),
+      });
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error || "Could not remove the product.");
+
+      const removedName = removeTarget.name;
+      setRows((current) => current.filter((row) => row.id !== removeTarget.id));
+      setRemoveTarget(null);
+      setNotice(`${removedName} removed from the product register.`);
+      onChanged?.();
+    } catch (err) {
+      setRemoveError(err instanceof Error ? err.message : "Could not remove the product safely.");
+    } finally {
+      setRemoving(false);
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -630,6 +658,19 @@ export default function InventoryWorkspace({
                             <Pencil size={12} /> Edit
                           </button>
                         )}
+                        {canEdit && (
+                          <button
+                            className="pill border-red-300/30 text-red-200 hover:border-red-200"
+                            onClick={() => {
+                              setRemoveTarget(row);
+                              setRemoveError("");
+                            }}
+                            aria-label={`Remove ${row.name}`}
+                            title="Remove only if no records reference this product"
+                          >
+                            <Trash2 size={12} /> Remove
+                          </button>
+                        )}
                         {!canEdit && <span className="tag">Read only</span>}
                       </div>
                     </td>
@@ -650,6 +691,66 @@ export default function InventoryWorkspace({
             : "Read-only staff view. Selling prices and availability are exactly what customers see; costs, suppliers and goods receiving are managed by the owner."}
         </div>
       </div>
+
+      {removeTarget && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="remove-product-title"
+            className="card w-full max-w-md p-6"
+          >
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <div className="tag text-red-200">BOSS ONLY · GUARDED REMOVAL</div>
+                <h3 id="remove-product-title" className="mt-2 text-xl font-bold">Remove product?</h3>
+                <p className="mt-1 text-sm">{removeTarget.name}</p>
+                <p className="mt-1 text-xs muted">SKU: {removeTarget.sku}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setRemoveTarget(null)}
+                aria-label="Close remove product dialog"
+                disabled={removing}
+              >
+                <X />
+              </button>
+            </div>
+
+            <p className="rounded-lg border border-white/[.08] p-3 text-xs leading-5 muted">
+              Removal is allowed only when no stock batches, stock movements, sales, repairs,
+              purchase orders, customer orders, imports, or other database records reference this
+              product. Existing history is never cascade-deleted. If a reference exists, removal is
+              blocked and the affected record tables are reported.
+            </p>
+
+            {removeError && (
+              <p role="alert" className="mt-4 rounded-lg border border-red-300/30 bg-red-300/5 p-3 text-sm text-red-200">
+                {removeError}
+              </p>
+            )}
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setRemoveTarget(null)}
+                className="btn btn-ghost text-xs"
+                disabled={removing}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={removeProduct}
+                disabled={removing}
+                className="btn btn-ghost border border-red-300/30 text-xs text-red-200 disabled:opacity-50"
+              >
+                <Trash2 size={14} /> {removing ? "Checking references…" : "Remove product"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {form && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm">

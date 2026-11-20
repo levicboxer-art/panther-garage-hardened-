@@ -1,8 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * The single business-intelligence engine, shared by /api/bi (charts) and
- * /api/assistant (AI grounding) so both always quote the same numbers.
+ * Deterministic business-intelligence calculations used by /api/bi.
  */
 
 const num = (v: unknown) => Number(v ?? 0);

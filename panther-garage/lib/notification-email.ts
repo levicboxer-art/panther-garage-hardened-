@@ -1,5 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { aiConfig } from "@/lib/ai-provider";
 
 type NotificationRow = {
   id: string;
@@ -20,14 +19,10 @@ function escapeHtml(value: string) {
 }
 
 function config() {
-  const ai = aiConfig();
   return {
     resendKey: process.env.RESEND_API_KEY || "",
     from: process.env.NOTIFICATION_EMAIL_FROM || "Panther Garage <alerts@example.com>",
     bossEmail: process.env.BOSS_ALERT_EMAIL || "",
-    aiKey: ai.apiKey,
-    aiBase: ai.baseUrl,
-    aiModel: ai.model,
   };
 }
 
@@ -43,42 +38,15 @@ async function bossRecipients(admin: SupabaseClient, bossIds: string[]) {
   return [...new Set(recipients)];
 }
 
-async function evaluateWithAi(items: NotificationRow[]) {
-  const fallback = {
-    subject: `Panther Garage: ${items.length} new notification${items.length === 1 ? "" : "s"}`,
-    summary: items.map((item) => `${item.title}: ${item.message}`).join(" "),
-    priority: items.some((item) => ["LOW_STOCK", "OUT_OF_STOCK"].includes(item.category)) ? "HIGH" : "NORMAL",
+function digestSummary(items: NotificationRow[]) {
+  const urgent = items.some((item) => ["LOW_STOCK", "OUT_OF_STOCK"].includes(item.category));
+  return {
+    subject: `Panther Garage: ${items.length} new notification${items.length === 1 ? "" : "s"}${urgent ? " · stock alert" : ""}`,
+    priority: urgent ? "HIGH" : "NORMAL",
+    summary: urgent
+      ? "A stock alert needs review. Check the current inventory before the next sale."
+      : `${items.length} new garage notification${items.length === 1 ? "" : "s"} need review.`,
   };
-  const cfg = config();
-  if (!cfg.aiKey || !items.length) return fallback;
-  try {
-    const response = await fetch(`${cfg.aiBase}/chat/completions`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${cfg.aiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: cfg.aiModel,
-        temperature: 0.1,
-        max_tokens: 240,
-        messages: [
-          { role: "system", content: "You triage garage business alerts. Return only JSON with subject, summary, priority where priority is HIGH, MEDIUM, or NORMAL. Do not invent facts." },
-          { role: "user", content: JSON.stringify(items.map(({ title, message, category, created_at }) => ({ title, message, category, created_at }))) },
-        ],
-      }),
-      signal: AbortSignal.timeout(12_000),
-    });
-    if (!response.ok) return fallback;
-    const payload = await response.json();
-    const text = payload?.choices?.[0]?.message?.content;
-    const parsed = JSON.parse(String(text).replace(/^```json\s*|\s*```$/g, ""));
-    if (typeof parsed.subject !== "string" || typeof parsed.summary !== "string") return fallback;
-    return {
-      subject: parsed.subject.slice(0, 140),
-      summary: parsed.summary.slice(0, 1200),
-      priority: ["HIGH", "MEDIUM", "NORMAL"].includes(parsed.priority) ? parsed.priority : fallback.priority,
-    };
-  } catch {
-    return fallback;
-  }
 }
 
 export async function dispatchBossNotificationEmail(admin: SupabaseClient) {
@@ -117,7 +85,7 @@ export async function dispatchBossNotificationEmail(admin: SupabaseClient) {
     const pending = rows.filter((row) => !deliveredIds.has(row.id));
     if (!pending.length) continue;
 
-    const evaluation = await evaluateWithAi(pending);
+    const summary = digestSummary(pending);
     const list = pending.map((item) => `<li><strong>${escapeHtml(item.title)}</strong><br>${escapeHtml(item.message)} <small>(${escapeHtml(item.category)})</small></li>`).join("");
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -125,8 +93,8 @@ export async function dispatchBossNotificationEmail(admin: SupabaseClient) {
       body: JSON.stringify({
         from: cfg.from,
         to: recipients,
-        subject: evaluation.subject,
-        html: `<div style="font-family:Arial,sans-serif;max-width:680px"><h2>${escapeHtml(evaluation.subject)}</h2><p><strong>AI priority: ${escapeHtml(evaluation.priority)}</strong></p><p>${escapeHtml(evaluation.summary)}</p><hr><ul>${list}</ul><p style="color:#666;font-size:12px">Open Panther Garage to review and mark notifications as read.</p></div>`,
+        subject: summary.subject,
+        html: `<div style="font-family:Arial,sans-serif;max-width:680px"><h2>${escapeHtml(summary.subject)}</h2><p><strong>Priority: ${escapeHtml(summary.priority)}</strong></p><p>${escapeHtml(summary.summary)}</p><hr><ul>${list}</ul><p style="color:#666;font-size:12px">Open Panther Garage to review and mark notifications as read.</p></div>`,
       }),
       signal: AbortSignal.timeout(15_000),
     });
