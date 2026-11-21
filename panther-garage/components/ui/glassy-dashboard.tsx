@@ -34,6 +34,7 @@ type Product = {
 
 type ReportSummary = {
   period: { from: string; to: string };
+  daily_activity: { date: string; day: string; sales: number; repairs: number }[];
   operations: {
     sales_count: number;
     repairs_received: number;
@@ -235,6 +236,10 @@ export default function GlassyDashboard({
     ? `${displayDate(report.period.from)} – ${displayDate(report.period.to)}`
     : "Last 30 days";
   const shownLowStock = lowStockProducts.slice(0, 5);
+  const activity = report?.daily_activity || [];
+  const activityMax = Math.max(1, ...activity.flatMap((day) => [day.sales, day.repairs]));
+  const salesInWeek = activity.reduce((total, day) => total + day.sales, 0);
+  const repairsInWeek = activity.reduce((total, day) => total + day.repairs, 0);
   const threshold = (product: Product) => Math.max(product.minimum_stock, 2);
   const actions: {
     title: string;
@@ -419,6 +424,39 @@ export default function GlassyDashboard({
           </div>
         </section>
       </div>
+
+      <section className={styles.activityPanel} data-reveal aria-labelledby="activity-title" aria-busy={loading}>
+        <div className={styles.activityHeading}>
+          <div>
+            <p className={styles.panelEyebrow}>LAST 7 DAYS</p>
+            <h3 id="activity-title">Sales &amp; workshop pulse</h3>
+            <p className={styles.panelDescription}>Completed sales and repair jobs received, by day.</p>
+          </div>
+          <div className={styles.activityTotals} aria-label={`${salesInWeek} completed sales and ${repairsInWeek} repair jobs over the last seven days`}>
+            <span><strong>{loading && !report ? "…" : salesInWeek}</strong> sales</span>
+            <span><strong>{loading && !report ? "…" : repairsInWeek}</strong> repairs</span>
+          </div>
+        </div>
+        {activity.length ? (
+          <div className={styles.activityChart} role="img" aria-label={`Daily totals ending ${displayDate(report!.period.to)}. ${activity.map((day) => `${day.day}: ${day.sales} sales and ${day.repairs} repairs`).join("; ")}.`}>
+            {activity.map((day) => (
+              <div className={styles.activityDay} key={day.date} title={`${day.day}: ${day.sales} sales, ${day.repairs} repairs`}>
+                <div className={styles.activityBars} aria-hidden="true">
+                  <span className={styles.salesBar} style={{ height: `${day.sales ? Math.max(7, day.sales / activityMax * 68) : 0}px` }} />
+                  <span className={styles.repairsBar} style={{ height: `${day.repairs ? Math.max(7, day.repairs / activityMax * 68) : 0}px` }} />
+                </div>
+                <div className={styles.activityCounts} aria-hidden="true"><span>{day.sales}</span><span>{day.repairs}</span></div>
+                <span className={styles.activityDayLabel}>{day.day}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className={styles.activityEmpty} role="status">{loading ? "Loading the latest activity…" : "No recorded activity for this period yet."}</div>
+        )}
+        <div className={styles.activityLegend} aria-hidden="true">
+          <span><i className={styles.salesKey} /> Sales</span><span><i className={styles.repairsKey} /> Repairs received</span>
+        </div>
+      </section>
 
       <div className={styles.footer} data-reveal>
         <span>Panther Garage · data shown from recorded transactions only</span>
