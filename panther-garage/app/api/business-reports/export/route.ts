@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
-import JSZip from "jszip";
 import PDFDocument from "pdfkit";
 import { createClient } from "@/lib/supabase/server";
 import { rateLimit, rateLimitedResponse } from "@/lib/api-security";
@@ -11,32 +10,28 @@ export const dynamic = "force-dynamic";
 const NO_STORE = { "Cache-Control": "private, no-store, max-age=0", "X-Content-Type-Options": "nosniff", "Cross-Origin-Resource-Policy": "same-origin" };
 
 function jsonError(message: string, status: number) { return NextResponse.json({ error: message }, { status, headers: NO_STORE }); }
-function csvCell(value: unknown) { const raw = value === null || value === undefined ? "" : typeof value === "object" ? JSON.stringify(value) : String(value); const safe = /^[\u0000-\u0020]*[=+\-@]/.test(raw) ? `'${raw}` : raw; return `"${safe.replaceAll('"', '""')}"`; }
-function csv(rows: Record<string, unknown>[]) { const keys = [...new Set(rows.flatMap((row) => Object.keys(row)))]; return `\uFEFF${[keys, ...rows.map((row) => keys.map((key) => row[key]))].map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`; }
-function flatten(value: unknown): Record<string, unknown>[] { return Array.isArray(value) ? value.filter((row) => row && typeof row === "object") as Record<string, unknown>[] : []; }
 function money(value: unknown) { return `RWF ${Number(value || 0).toLocaleString("en-RW", { maximumFractionDigits: 2 })}`; }
 function label(category: string) { return ({ complete: "Complete Business Report", financial: "Financial Report", sales: "Sales Report", inventory: "Inventory Report", payments: "Payment Report", repairs: "Repair Report", expenses: "Expense Report", customers: "Customer Report" } as Record<string, string>)[category] || category; }
 
 function reportRows(report: any, category: ReportCategory) {
   const sheets: Record<string, Record<string, unknown>[]> = {
     "business_summary": [report.executive_summary],
-    "sales_detail": report.sales.invoices,
-    "product_performance": report.sales.product_sales,
-    "payments": report.payments.transactions,
-    "inventory_snapshot": report.inventory.products,
+    "sales_report": report.sales.invoices,
+    "payments_report": report.payments.transactions,
+    "inventory_report": report.inventory.products,
     "stock_movements": report.inventory.movements,
-    "repairs": report.repairs.jobs,
-    "expenses": report.expenses.transactions,
-    "purchases": report.purchases,
+    "repairs_report": report.repairs.jobs,
+    "expenses_report": report.expenses.transactions,
+    "purchases_report": report.purchases,
     "customers_report": [{ registered: report.customers.registered, new_customers: report.customers.new_customers, returning_customers: report.customers.returning_customers, total_customer_orders: report.customers.total_customer_orders, average_order_value: report.customers.average_order_value }],
-    "management_alerts": report.insights,
+    "management_insights": report.insights,
   };
   if (category === "financial") return { financial_report: [report.financial] };
-  if (category === "sales") return { sales_detail: sheets.sales_detail, product_performance: sheets.product_performance };
-  if (category === "payments") return { payments: sheets.payments };
-  if (category === "inventory") return { inventory_snapshot: sheets.inventory_snapshot, stock_movements: sheets.stock_movements };
-  if (category === "repairs") return { repairs: sheets.repairs };
-  if (category === "expenses") return { expenses: sheets.expenses, purchases: sheets.purchases };
+  if (category === "sales") return { sales_report: sheets.sales_report };
+  if (category === "payments") return { payments_report: sheets.payments_report };
+  if (category === "inventory") return { inventory_report: sheets.inventory_report, stock_movements: sheets.stock_movements };
+  if (category === "repairs") return { repairs_report: sheets.repairs_report };
+  if (category === "expenses") return { expenses_report: sheets.expenses_report, purchases_report: sheets.purchases_report };
   if (category === "customers") return { customers_report: sheets.customers_report };
   return sheets;
 }
@@ -48,7 +43,7 @@ async function makeWorkbook(report: any, category: ReportCategory) {
   const entries = reportRows(report, category);
   const title = label(category);
   for (const [name, rows] of Object.entries(entries)) {
-    const sheetName = name === "business_summary" ? "00_Executive_Summary" : ({ sales_detail: "01_Sales_Detail", product_performance: "02_Product_Performance", payments: "03_Payments", inventory_snapshot: "04_Inventory", stock_movements: "05_Stock_Movements", repairs: "06_Repairs", expenses: "07_Expenses", management_alerts: "08_Management_Alerts", financial_report: "01_Financial", customers_report: "08_Customers", purchases: "07_Purchases" } as Record<string, string>)[name] || name.slice(0, 31);
+    const sheetName = name === "business_summary" ? "00_Executive_Summary" : ({ sales_report: "01_Sales", payments_report: "02_Payments", inventory_report: "03_Inventory", stock_movements: "04_Stock_Movements", repairs_report: "05_Repairs", expenses_report: "06_Expenses", purchases_report: "07_Purchases", customers_report: "08_Customers", management_insights: "09_Insights", financial_report: "01_Financial" } as Record<string, string>)[name] || name.slice(0, 31);
     const sheet = workbook.addWorksheet(sheetName);
     sheet.addRow(["Panther Legacy Garage", title]);
     sheet.addRow(["Reporting period", `${report.meta.from} to ${report.meta.to}`]);
@@ -64,10 +59,22 @@ async function makeWorkbook(report: any, category: ReportCategory) {
     sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "17212B" } };
     sheet.getRow(6).font = { bold: true, color: { argb: "FFFFFFFF" } };
     sheet.getRow(6).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "526A3C" } };
+    sheet.getRow(6).alignment = { vertical: "middle", wrapText: true };
+    sheet.getRow(6).height = 30;
+    sheet.properties.tabColor = { argb: "526A3C" };
+    sheet.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+    sheet.headerFooter.oddFooter = "&LConfidential – Panther Legacy Garage&CPage &P of &N";
     sheet.columns.forEach((column) => { column.width = Math.min(42, Math.max(14, (column.header?.toString().length || 12) + 4)); });
     for (let rowNumber = 7; rowNumber <= sheet.rowCount; rowNumber++) {
       const row = sheet.getRow(rowNumber);
-      row.eachCell((cell, columnNumber) => { if (typeof cell.value === "number" && /(amount|revenue|cost|price|profit|balance|total|expense|value|paid)/i.test(String(keys[columnNumber - 1] || ""))) cell.numFmt = '"RWF "#,##0.00'; });
+      row.eachCell((cell, columnNumber) => {
+        const key = String(keys[columnNumber - 1] || "");
+        if (typeof cell.value === "number" && /(amount|revenue|cost|price|profit|balance|total|expense|value|paid)/i.test(key)) cell.numFmt = '"RWF "#,##0.00';
+        const text = String(cell.value || "").toUpperCase();
+        if (text.includes("RED") || text.includes("LOSS") || text.includes("OUT_OF_STOCK")) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FCE4E4" } };
+        else if (text.includes("AMBER") || text.includes("WARNING") || text.includes("LOW_STOCK") || text.includes("INCOMPLETE")) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2CC" } };
+        else if (text.includes("PROFIT") || text.includes("HEALTHY") || text.includes("AVAILABLE")) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "E2F0D9" } };
+      });
     }
   }
   return workbook.xlsx.writeBuffer();
@@ -113,20 +120,15 @@ export async function GET(request: Request) {
   const params = new URL(request.url).searchParams;
   const window = normaliseReportWindow(params.get("from"), params.get("to"));
   const category = (params.get("category") || "complete") as ReportCategory;
-  const format = params.get("format") || "csv";
+  const format = params.get("format") || "xlsx";
   if (!window || !REPORT_CATEGORIES.includes(category)) return jsonError("Choose a valid reporting period and category.", 400);
-  if (!["pdf", "xlsx", "csv"].includes(format)) return jsonError("Choose PDF, Excel or CSV export.", 400);
+  if (!["pdf", "xlsx"].includes(format)) return jsonError("Choose PDF or Excel export.", 400);
   try {
     const report = await buildBusinessReport(supabase, window, category);
     const stamp = window.from === window.to ? window.from : `${window.from}-to-${window.to}`;
     if (format === "pdf") { const pdf = await makePdf(report, category); return new Response(new Uint8Array(pdf).buffer as ArrayBuffer, { headers: { ...NO_STORE, "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="panther-legacy-garage-${category}-${stamp}.pdf"` } }); }
     if (format === "xlsx") return new Response(await makeWorkbook(report, category), { headers: { ...NO_STORE, "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="panther-legacy-garage-${category}-${stamp}.xlsx"` } });
-    const zip = new JSZip();
-    const files = reportRows(report, category);
-    for (const [name, rows] of Object.entries(files)) zip.file(`${name}.csv`, csv(rows));
-    zip.file("README.txt", `Panther Legacy Garage Business Report\nCategory: ${label(category)}\nReporting period: ${window.from} to ${window.to}\nGenerated: ${report.meta.generated_at}\nCurrency: RWF\n\nMonetary columns contain numeric RWF values. Profit is unavailable when verified cost data is incomplete. PowerPay and repair-payment records are not present in the current PGMS schema.\n`);
-    const zipped = await zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
-    return new Response(zipped.buffer as ArrayBuffer, { headers: { ...NO_STORE, "Content-Type": "application/zip", "Content-Disposition": `attachment; filename="panther-legacy-garage-${category}-${stamp}.zip"` } });
+    return jsonError("Unsupported export format.", 400);
   } catch (err) {
     console.error("Business report export failed:", err instanceof Error ? err.message : err);
     return jsonError("The report export could not be prepared from the recorded PGMS data.", 503);

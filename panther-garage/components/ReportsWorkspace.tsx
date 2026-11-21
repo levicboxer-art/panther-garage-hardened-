@@ -5,7 +5,7 @@ import { AlertTriangle, Download, FileBarChart, FileSpreadsheet, FileText, Refre
 
 type Role = "BOSS" | "EMPLOYEE";
 type Category = "complete" | "financial" | "sales" | "inventory" | "payments" | "repairs" | "expenses" | "customers";
-type Format = "pdf" | "xlsx" | "csv";
+type Format = "pdf" | "xlsx";
 
 const money = (value: unknown) => value === null || value === undefined ? "Not available" : new Intl.NumberFormat("en-RW", { style: "currency", currency: "RWF", maximumFractionDigits: 0 }).format(Number(value || 0));
 const today = () => new Date().toISOString().slice(0, 10);
@@ -28,7 +28,7 @@ export default function ReportsWorkspace({ role }: { role: Role }) {
   const [from, setFrom] = useState(initial.from);
   const [to, setTo] = useState(initial.to);
   const [category, setCategory] = useState<Category>("complete");
-  const [format, setFormat] = useState<Format>("pdf");
+  const [format, setFormat] = useState<Format>("xlsx");
   const [report, setReport] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -52,7 +52,7 @@ export default function ReportsWorkspace({ role }: { role: Role }) {
     try {
       const response = await fetch(`/api/business-reports/export?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&category=${category}&format=${format}`, { cache: "no-store" });
       if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || "Could not prepare the export."); }
-      const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `panther-legacy-garage-${category}-${from}-to-${to}.${format === "csv" ? "zip" : format}`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); setNotice(`${format.toUpperCase()} report downloaded.`);
+      const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `panther-legacy-garage-${category}-${from}-to-${to}.${format}`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); setNotice(`${format === "xlsx" ? "Excel" : "PDF"} report downloaded.`);
     } catch (err) { setError(err instanceof Error ? err.message : "Could not prepare the export."); }
     finally { setExporting(false); }
   }
@@ -71,7 +71,7 @@ export default function ReportsWorkspace({ role }: { role: Role }) {
         <label className="text-xs muted">Start date<input className="field mt-1" type="date" value={from} max={to} onChange={(e) => { setPreset("custom"); setFrom(e.target.value); }} /></label>
         <label className="text-xs muted">End date<input className="field mt-1" type="date" value={to} min={from} max={today()} onChange={(e) => { setPreset("custom"); setTo(e.target.value); }} /></label>
         <label className="text-xs muted">Report category<select className="field mt-1" value={category} onChange={(e) => setCategory(e.target.value as Category)}><option value="complete">Complete Business Report</option><option value="financial">Financial Report</option><option value="sales">Sales Report</option><option value="inventory">Inventory Report</option><option value="payments">Payment Report</option><option value="repairs">Repair Report</option><option value="expenses">Expense Report</option><option value="customers">Customer Report</option></select></label>
-        <label className="text-xs muted">Export format<select className="field mt-1" value={format} onChange={(e) => setFormat(e.target.value as Format)}><option value="pdf">PDF</option><option value="xlsx">Excel (.xlsx)</option><option value="csv">CSV package (.zip)</option></select></label>
+        <label className="text-xs muted">Export format<select className="field mt-1" value={format} onChange={(e) => setFormat(e.target.value as Format)}><option value="xlsx">Professional Excel (.xlsx)</option><option value="pdf">PDF</option></select></label>
       </div>
       <div className="mt-4 flex flex-wrap gap-2"><button className="btn btn-primary text-xs" onClick={() => void generate()} disabled={busy}><RefreshCw size={14} />{busy ? "Generating…" : "Generate Report"}</button><button className="btn btn-ghost text-xs" onClick={() => void download()} disabled={exporting}><Download size={14} />{exporting ? "Preparing…" : "Download Report"}</button></div>
       {error && <p className="mt-3 text-sm text-red-300" role="alert">{error}</p>}{notice && <p className="mt-3 text-sm text-lime" role="status">{notice}</p>}
