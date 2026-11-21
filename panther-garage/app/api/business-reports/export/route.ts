@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createClient } from "@/lib/supabase/server";
 import { rateLimit, rateLimitedResponse } from "@/lib/api-security";
 import { buildBusinessReport, normaliseReportWindow, REPORT_CATEGORIES, type ReportCategory } from "@/lib/business-report";
+import { isCalendarMonthWindow } from "@/lib/report-window";
 import { createReferenceBusinessWorkbook } from "@/lib/business-report-workbook";
 
 export const runtime = "nodejs";
@@ -164,10 +165,12 @@ export async function GET(request: Request) {
   if (!profile?.active || profile.role !== "BOSS") return jsonError("Only an active Boss can download owner-level reports.", 403);
   const params = new URL(request.url).searchParams;
   const window = normaliseReportWindow(params.get("from"), params.get("to"));
-  const category = (params.get("category") || "complete") as ReportCategory;
+  const requestedCategory = (params.get("category") || "complete") as ReportCategory;
   const format = params.get("format") || "xlsx";
-  if (!window || !REPORT_CATEGORIES.includes(category)) return jsonError("Choose a valid reporting period and category.", 400);
+  if (!window || !REPORT_CATEGORIES.includes(requestedCategory)) return jsonError("Choose a valid reporting period and category.", 400);
   if (!["pdf", "xlsx"].includes(format)) return jsonError("Choose PDF or Excel export.", 400);
+  // Calendar-month Excel downloads always use the supplied complete-report template.
+  const category = format === "xlsx" && isCalendarMonthWindow(window.from, window.to) ? "complete" : requestedCategory;
   try {
     const report = await buildBusinessReport(supabase, window, category);
     const stamp = window.from === window.to ? window.from : `${window.from}-to-${window.to}`;

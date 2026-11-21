@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Download, FileBarChart, FileSpreadsheet, FileText, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
+import { isCalendarMonthWindow } from "@/lib/report-window";
 
 type Role = "BOSS" | "EMPLOYEE";
 type Category = "complete" | "financial" | "sales" | "inventory" | "payments" | "repairs" | "expenses" | "customers";
@@ -36,6 +37,10 @@ export default function ReportsWorkspace({ role }: { role: Role }) {
   const [notice, setNotice] = useState("");
 
   const periodLabel = useMemo(() => `${from} → ${to}`, [from, to]);
+  const isReferenceMonthlyExcel = format === "xlsx" && isCalendarMonthWindow(from, to);
+  useEffect(() => {
+    if (isReferenceMonthlyExcel) setCategory("complete");
+  }, [isReferenceMonthlyExcel]);
   function selectPreset(value: string) { setPreset(value); if (value !== "custom") { const next = rangeFor(value); setFrom(next.from); setTo(next.to); } }
   async function generate() {
     setBusy(true); setError(""); setNotice("");
@@ -50,9 +55,10 @@ export default function ReportsWorkspace({ role }: { role: Role }) {
   async function download() {
     setExporting(true); setError(""); setNotice("");
     try {
-      const response = await fetch(`/api/business-reports/export?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&category=${category}&format=${format}`, { cache: "no-store" });
+      const exportCategory = isReferenceMonthlyExcel ? "complete" : category;
+      const response = await fetch(`/api/business-reports/export?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&category=${exportCategory}&format=${format}`, { cache: "no-store" });
       if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || "Could not prepare the export."); }
-      const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `panther-legacy-garage-${category}-${from}-to-${to}.${format}`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); setNotice(`${format === "xlsx" ? "Excel" : "PDF"} report downloaded.`);
+      const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `panther-legacy-garage-${exportCategory}-${from}-to-${to}.${format}`; document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000); setNotice(isReferenceMonthlyExcel ? "Reference-style monthly Excel report downloaded." : `${format === "xlsx" ? "Excel" : "PDF"} report downloaded.`);
     } catch (err) { setError(err instanceof Error ? err.message : "Could not prepare the export."); }
     finally { setExporting(false); }
   }
@@ -70,10 +76,11 @@ export default function ReportsWorkspace({ role }: { role: Role }) {
         <label className="text-xs muted">Reporting period<select className="field mt-1" value={preset} onChange={(e) => selectPreset(e.target.value)}><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option><option value="last_month">Last Month</option><option value="quarter">This Quarter</option><option value="year">This Year</option><option value="custom">Custom Range</option></select></label>
         <label className="text-xs muted">Start date<input className="field mt-1" type="date" value={from} max={to} onChange={(e) => { setPreset("custom"); setFrom(e.target.value); }} /></label>
         <label className="text-xs muted">End date<input className="field mt-1" type="date" value={to} min={from} max={today()} onChange={(e) => { setPreset("custom"); setTo(e.target.value); }} /></label>
-        <label className="text-xs muted">Report category<select className="field mt-1" value={category} onChange={(e) => setCategory(e.target.value as Category)}><option value="complete">Complete Business Report</option><option value="financial">Financial Report</option><option value="sales">Sales Report</option><option value="inventory">Inventory Report</option><option value="payments">Payment Report</option><option value="repairs">Repair Report</option><option value="expenses">Expense Report</option><option value="customers">Customer Report</option></select></label>
+        <label className="text-xs muted">Report category<select className="field mt-1" value={category} disabled={isReferenceMonthlyExcel} onChange={(e) => setCategory(e.target.value as Category)}><option value="complete">Complete Business Report</option><option value="financial">Financial Report</option><option value="sales">Sales Report</option><option value="inventory">Inventory Report</option><option value="payments">Payment Report</option><option value="repairs">Repair Report</option><option value="expenses">Expense Report</option><option value="customers">Customer Report</option></select></label>
         <label className="text-xs muted">Export format<select className="field mt-1" value={format} onChange={(e) => setFormat(e.target.value as Format)}><option value="xlsx">Professional Excel (.xlsx)</option><option value="pdf">PDF</option></select></label>
       </div>
-      <div className="mt-4 flex flex-wrap gap-2"><button className="btn btn-primary text-xs" onClick={() => void generate()} disabled={busy}><RefreshCw size={14} />{busy ? "Generating…" : "Generate Report"}</button><button className="btn btn-ghost text-xs" onClick={() => void download()} disabled={exporting}><Download size={14} />{exporting ? "Preparing Excel…" : format === "xlsx" && (preset === "month" || preset === "last_month") ? "Download Month Excel" : format === "xlsx" ? "Download Excel" : "Download PDF"}</button></div>
+      {isReferenceMonthlyExcel && <p className="mt-3 text-xs muted">Monthly Excel uses the full reference-style workbook and its fixed section order. Category-only exports are available with PDF or a non-month date range.</p>}
+      <div className="mt-4 flex flex-wrap gap-2"><button className="btn btn-primary text-xs" onClick={() => void generate()} disabled={busy}><RefreshCw size={14} />{busy ? "Generating…" : "Generate Report"}</button><button className="btn btn-ghost text-xs" onClick={() => void download()} disabled={exporting}><Download size={14} />{exporting ? "Preparing Excel…" : isReferenceMonthlyExcel ? "Download Reference-Style Month Excel" : format === "xlsx" ? "Download Excel" : "Download PDF"}</button></div>
       {error && <p className="mt-3 text-sm text-red-300" role="alert">{error}</p>}{notice && <p className="mt-3 text-sm text-lime" role="status">{notice}</p>}
     </div>
 
