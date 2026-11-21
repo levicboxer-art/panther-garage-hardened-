@@ -59,7 +59,7 @@ export default function RecentInvoicesWorkspace({ role }: { role: "BOSS" | "EMPL
   const load = useCallback(async () => {
     const [salesResponse, noticeResponse] = await Promise.all([
       fetch("/api/sales", { cache: "no-store" }),
-      fetch("/api/notifications?category=SALE", { cache: "no-store" }),
+      fetch("/api/notifications?category=SALE&unread=true", { cache: "no-store" }),
     ]);
     const [salesData, noticeData] = await Promise.all([salesResponse.json(), noticeResponse.json()]);
     if (salesResponse.ok) {

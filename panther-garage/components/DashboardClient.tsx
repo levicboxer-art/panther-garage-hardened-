@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
@@ -116,6 +116,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
   const [employeeEmail, setEmployeeEmail] = useState("");
   const [employeePassword, setEmployeePassword] = useState("");
   const [unreadSaleAlerts, setUnreadSaleAlerts] = useState(0);
+  const saleAlertRequestId = useRef(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
@@ -245,22 +246,23 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
     [profile.role],
   );
 
+  const refreshSaleAlerts = useCallback(async () => {
+    const requestId = ++saleAlertRequestId.current;
+    try {
+      const response = await fetch("/api/notifications?category=SALE&unread=true&count=true", { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (requestId === saleAlertRequestId.current) setUnreadSaleAlerts(Number(data.unread) || 0);
+    } catch {
+      // Navigation remains available if notifications are briefly unavailable.
+    }
+  }, []);
+
   useEffect(() => {
-    let active = true;
-    const refreshSaleAlerts = async () => {
-      try {
-        const response = await fetch("/api/notifications?category=SALE", { cache: "no-store" });
-        if (!response.ok) return;
-        const data = await response.json();
-        if (active) setUnreadSaleAlerts((data.notifications || []).filter((item: { read_at: string | null }) => !item.read_at).length);
-      } catch {
-        // Navigation remains available if notifications are briefly unavailable.
-      }
-    };
     void refreshSaleAlerts();
     const timer = window.setInterval(() => void refreshSaleAlerts(), 15000);
-    return () => { active = false; window.clearInterval(timer); };
-  }, []);
+    return () => window.clearInterval(timer);
+  }, [refreshSaleAlerts]);
 
   async function navigateTo(name: string) {
     if (name !== "Recent invoices") {
@@ -268,17 +270,12 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
       return;
     }
     try {
-      const response = await fetch("/api/notifications?category=SALE", { cache: "no-store" });
-      if (response.ok) {
-        const data = await response.json();
-        const unread = (data.notifications || []).filter((item: { id: string; read_at: string | null }) => !item.read_at);
-        const results = await Promise.all(unread.map((item: { id: string }) => fetch("/api/notifications", {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: item.id }),
-        })));
-        if (results.every((result: Response) => result.ok)) setUnreadSaleAlerts(0);
-      }
+      const response = await fetch("/api/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mark_all_category: "SALE" }),
+      });
+      if (response.ok) await refreshSaleAlerts();
     } catch {
       // Keep the badge visible so acknowledgement can be retried.
     }
