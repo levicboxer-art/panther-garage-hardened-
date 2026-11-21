@@ -702,7 +702,7 @@ export default function InventoryWorkspace({
           >
             <div className="mb-4 flex items-start justify-between gap-4">
               <div>
-                <div className="tag text-red-200">BOSS ONLY · GUARDED REMOVAL</div>
+                <div className="tag text-red-200">BOSS ONLY · PERMANENT REMOVAL</div>
                 <h3 id="remove-product-title" className="mt-2 text-xl font-bold">Remove product?</h3>
                 <p className="mt-1 text-sm">{removeTarget.name}</p>
                 <p className="mt-1 text-xs muted">SKU: {removeTarget.sku}</p>
@@ -718,10 +718,9 @@ export default function InventoryWorkspace({
             </div>
 
             <p className="rounded-lg border border-white/[.08] p-3 text-xs leading-5 muted">
-              Removal is allowed only when no stock batches, stock movements, sales, repairs,
-              purchase orders, customer orders, imports, or other database records reference this
-              product. Existing history is never cascade-deleted. If a reference exists, removal is
-              blocked and the affected record tables are reported.
+              This permanently removes the product and its inventory batches. Existing sales,
+              repairs, orders, imports, and stock-movement history are preserved; only their link to
+              this product is cleared. This action cannot be undone.
             </p>
 
             {removeError && (
@@ -745,7 +744,7 @@ export default function InventoryWorkspace({
                 disabled={removing}
                 className="btn btn-ghost border border-red-300/30 text-xs text-red-200 disabled:opacity-50"
               >
-                <Trash2 size={14} /> {removing ? "Checking references…" : "Remove product"}
+                <Trash2 size={14} /> {removing ? "Removing permanently…" : "Remove product"}
               </button>
             </div>
           </div>
