@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createClient } from "@/lib/supabase/server";
 import { rateLimit, rateLimitedResponse } from "@/lib/api-security";
 import { buildBusinessReport, normaliseReportWindow, REPORT_CATEGORIES, type ReportCategory } from "@/lib/business-report";
@@ -36,13 +38,55 @@ function reportRows(report: any, category: ReportCategory) {
   return sheets;
 }
 
+const BLUE = "123A63";
+const LIGHT_BLUE = "DCEAF5";
+const GREEN = "D9F2D0";
+const RED = "F8D7DA";
+const AMBER = "FFF0C2";
+const WHITE = "FFFFFFFF";
+const BORDER = { style: "thin" as const, color: { argb: "9FB6C9" } };
+const moneyValue = (value: unknown) => value === null || value === undefined ? "Not available" : Number(value || 0);
+function sectionBar(sheet: ExcelJS.Worksheet, row: number, title: string, from = 1, to = 10) {
+  sheet.mergeCells(row, from, row, to);
+  const cell = sheet.getCell(row, from);
+  cell.value = title.toUpperCase(); cell.font = { bold: true, color: { argb: WHITE }, size: 12 }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BLUE } }; cell.alignment = { vertical: "middle" }; sheet.getRow(row).height = 23;
+}
+function tableHeader(sheet: ExcelJS.Worksheet, row: number, values: string[], from = 1) {
+  values.forEach((value, index) => { const cell = sheet.getCell(row, from + index); cell.value = value; cell.font = { bold: true, color: { argb: "102A43" } }; cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: LIGHT_BLUE } }; cell.border = { top: BORDER, bottom: BORDER, left: BORDER, right: BORDER }; cell.alignment = { wrapText: true, vertical: "middle" }; });
+  sheet.getRow(row).height = 25;
+}
+function tableValue(sheet: ExcelJS.Worksheet, row: number, col: number, value: unknown, numeric = false) {
+  const cell = sheet.getCell(row, col); cell.value = value as ExcelJS.CellValue; cell.border = { top: BORDER, bottom: BORDER, left: BORDER, right: BORDER }; cell.alignment = { vertical: "middle", wrapText: true }; if (numeric) cell.numFmt = '"RWF "#,##0';
+}
+function addExecutiveSummarySheet(workbook: ExcelJS.Workbook, report: any, title: string) {
+  const sheet = workbook.addWorksheet("00_Executive_Summary");
+  sheet.properties.tabColor = { argb: BLUE }; sheet.views = [{ state: "frozen", ySplit: 6 }]; sheet.pageSetup = { orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 2, paperSize: 9 }; sheet.headerFooter.oddFooter = "&LConfidential – Panther Legacy Garage&CPage &P of &N";
+  sheet.columns = [{ width: 3 }, { width: 23 }, { width: 18 }, { width: 3 }, { width: 23 }, { width: 18 }, { width: 3 }, { width: 23 }, { width: 18 }, { width: 3 }];
+  sheet.mergeCells("B1:I2"); const titleCell = sheet.getCell("B1"); titleCell.value = "PANTHER LEGACY GARAGE\nMonthly Business Performance Report"; titleCell.font = { bold: true, size: 20, color: { argb: BLUE } }; titleCell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+  try { const image = workbook.addImage({ buffer: readFileSync(join(process.cwd(), "public", "favicon.png")) as any, extension: "png" }); sheet.addImage(image, { tl: { col: 0.2, row: 0.15 }, ext: { width: 125, height: 92 } }); } catch { /* Branding image is optional in minimal deployments. */ }
+  sheet.mergeCells("B3:I3"); sheet.getCell("B3").value = "Drive Smarter. Grow Stronger."; sheet.getCell("B3").font = { italic: true, bold: true, size: 12, color: { argb: "334E68" } };
+  sheet.getCell("H1").value = "Reporting Period:"; sheet.getCell("H1").font = { bold: true, color: { argb: "102A43" } }; sheet.getCell("H2").value = `${report.meta.from} to ${report.meta.to}`; sheet.getCell("H2").font = { bold: true, color: { argb: BLUE } }; sheet.getCell("H3").value = `Generated: ${new Date(report.meta.generated_at).toLocaleString()}`; sheet.getCell("H3").font = { size: 9, color: { argb: "52606D" } };
+  sectionBar(sheet, 5, "Executive Summary", 2, 9);
+  const k = report.executive_summary; const cards = [["Total Sales Revenue", k.total_sales_revenue, k.revenue_change_pct, GREEN], ["Payments Collected", k.total_successful_payments_collected, null, LIGHT_BLUE], ["Gross Profit", k.gross_profit, null, GREEN], ["Net Result", k.net_operating_result, null, k.result_status === "LOSS" ? RED : GREEN]];
+  cards.forEach(([labelText, value, changePct, fill], index) => { const start = 2 + index * 2; sheet.mergeCells(7, start, 7, start + 1); sheet.mergeCells(8, start, 9, start + 1); sheet.getCell(7, start).value = labelText; sheet.getCell(7, start).font = { bold: true, color: { argb: "102A43" } }; sheet.getCell(7, start).fill = { type: "pattern", pattern: "solid", fgColor: { argb: String(fill) } }; sheet.getCell(7, start).alignment = { horizontal: "center" }; sheet.getCell(8, start).value = moneyValue(value); sheet.getCell(8, start).numFmt = '"RWF "#,##0'; sheet.getCell(8, start).font = { bold: true, size: 16, color: { argb: value !== null && Number(value) < 0 ? "B42318" : BLUE } }; sheet.getCell(8, start).alignment = { horizontal: "center", vertical: "middle" }; sheet.getCell(8, start).fill = { type: "pattern", pattern: "solid", fgColor: { argb: String(fill) } }; if (changePct !== null) { sheet.getCell(10, start).value = `${Number(changePct) >= 0 ? "▲" : "▼"} ${changePct}% vs previous period`; sheet.getCell(10, start).font = { color: { argb: Number(changePct) >= 0 ? "137333" : "B42318" }, bold: true, size: 9 }; } });
+  sectionBar(sheet, 12, "Financial Performance", 2, 5); sectionBar(sheet, 12, "Payment Collection", 7, 9);
+  tableHeader(sheet, 13, ["Category", "Amount (RWF)", "% of Sales", "vs Previous"], 2); const finRows = [["Gross Sales", report.financial.gross_sales], ["Discounts", report.financial.discounts], ["Net Sales Revenue", report.financial.net_sales_revenue], ["Cost of Goods Sold", report.financial.cost_of_goods_sold], ["Gross Profit", report.financial.gross_profit], ["Operating Expenses", report.financial.operating_expenses], ["Net Result", report.financial.net_operating_result]]; finRows.forEach((item, index) => { const r = 14 + index; tableValue(sheet, r, 2, item[0]); tableValue(sheet, r, 3, item[1], true); tableValue(sheet, r, 4, report.financial.net_sales_revenue ? `${Math.round(Number(item[1] || 0) / Number(report.financial.net_sales_revenue) * 1000) / 10}%` : "Not available"); tableValue(sheet, r, 5, index === 6 ? k.result_status : ""); if (index === 4 && item[1] !== null) sheet.getRow(r).fill = { type: "pattern", pattern: "solid", fgColor: { argb: GREEN } }; if (index === 6) sheet.getRow(r).fill = { type: "pattern", pattern: "solid", fgColor: { argb: k.result_status === "LOSS" ? RED : GREEN } }; });
+  tableHeader(sheet, 13, ["Method", "Amount (RWF)", "Share"], 7); (report.payments.by_method || []).slice(0, 5).forEach((item: any, index: number) => { const r = 14 + index; tableValue(sheet, r, 7, item.method); tableValue(sheet, r, 8, item.amount, true); tableValue(sheet, r, 9, report.payments.successful_value ? `${Math.round(item.amount / report.payments.successful_value * 1000) / 10}%` : "Not available"); }); tableValue(sheet, 19, 7, "Total Collected"); tableValue(sheet, 19, 8, report.payments.successful_value, true); tableValue(sheet, 19, 9, "100%");
+  sectionBar(sheet, 21, "Inventory Overview", 2, 5); sectionBar(sheet, 21, "Top 5 Best-Selling Spare Parts", 7, 9); tableHeader(sheet, 22, ["Metric", "Value"], 2); [["Total Products", report.inventory.summary.distinct_products], ["Total Units in Stock", report.inventory.summary.units_in_stock], ["Stock Value", report.inventory.summary.stock_purchase_value], ["Potential Sales Value", report.inventory.summary.estimated_potential_sales_value], ["Low Stock Items", report.inventory.summary.low_stock_products], ["Out of Stock Items", report.inventory.summary.out_of_stock_products]].forEach((item, index) => { tableValue(sheet, 23 + index, 2, item[0]); tableValue(sheet, 23 + index, 3, item[1], /Value|Stock/.test(String(item[0]))); }); tableHeader(sheet, 22, ["Product", "Qty Sold", "Revenue (RWF)"], 7); (report.sales.product_sales || []).slice(0, 5).forEach((item: any, index: number) => { tableValue(sheet, 23 + index, 7, item.product_name); tableValue(sheet, 23 + index, 8, item.units); tableValue(sheet, 23 + index, 9, item.revenue, true); });
+  sectionBar(sheet, 31, "Repair & Service Performance", 2, 5); sectionBar(sheet, 31, "Customer Performance", 7, 9); tableHeader(sheet, 32, ["Metric", "Value"], 2); [["Total Repair Jobs", report.repairs.summary.total_jobs], ["Completed Repairs", report.repairs.summary.completed_jobs], ["Pending Repairs", report.repairs.summary.pending_jobs], ["Repair Revenue", report.repairs.summary.repair_service_revenue], ["Avg. Completion Time", report.repairs.summary.average_completion_days === null ? "Not available" : `${report.repairs.summary.average_completion_days} days`]].forEach((item, index) => { tableValue(sheet, 33 + index, 2, item[0]); tableValue(sheet, 33 + index, 3, item[1], /Revenue/.test(String(item[0]))); }); tableHeader(sheet, 32, ["Metric", "Value"], 7); [["Total Customers", report.customers.registered], ["New Customers", report.customers.new_customers], ["Returning Customers", report.customers.returning_customers], ["Avg. Order Value", report.customers.average_order_value], ["Outstanding Balances", report.customers.outstanding_balances]].forEach((item, index) => { tableValue(sheet, 33 + index, 7, item[0]); tableValue(sheet, 33 + index, 8, item[1], /Value|Balances/.test(String(item[0]))); });
+  sectionBar(sheet, 39, "Management Insights & Recommendations", 2, 9); tableHeader(sheet, 40, ["Severity", "Issue", "Evidence", "Recommended Action"], 2); (report.insights || []).slice(0, 8).forEach((item: any, index: number) => { const r = 41 + index; tableValue(sheet, r, 2, item.severity); tableValue(sheet, r, 3, item.issue); tableValue(sheet, r, 4, item.metric); sheet.mergeCells(r, 5, r, 9); tableValue(sheet, r, 5, item.recommended_action); sheet.getRow(r).fill = { type: "pattern", pattern: "solid", fgColor: { argb: item.severity === "RED" ? RED : item.severity === "AMBER" ? AMBER : GREEN } }; });
+  sheet.mergeCells("B51:I51"); sheet.getCell("B51").value = "Confidential – Panther Legacy Garage · Kigali, Rwanda · Actual PGMS records only"; sheet.getCell("B51").font = { italic: true, color: { argb: "52606D" }, size: 9 }; sheet.getCell("B51").alignment = { horizontal: "center" };
+  return sheet;
+}
+
 async function makeWorkbook(report: any, category: ReportCategory) {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Panther Legacy Garage";
   workbook.created = new Date(report.meta.generated_at);
-  const entries = reportRows(report, category);
+  const entries = Object.entries(reportRows(report, category)).filter(([name]) => name !== "business_summary");
   const title = label(category);
-  for (const [name, rows] of Object.entries(entries)) {
+  if (category === "complete") addExecutiveSummarySheet(workbook, report, title);
+  for (const [name, rows] of entries) {
     const sheetName = name === "business_summary" ? "00_Executive_Summary" : ({ sales_report: "01_Sales", payments_report: "02_Payments", inventory_report: "03_Inventory", stock_movements: "04_Stock_Movements", repairs_report: "05_Repairs", expenses_report: "06_Expenses", purchases_report: "07_Purchases", customers_report: "08_Customers", management_insights: "09_Insights", financial_report: "01_Financial" } as Record<string, string>)[name] || name.slice(0, 31);
     const sheet = workbook.addWorksheet(sheetName);
     sheet.addRow(["Panther Legacy Garage", title]);
