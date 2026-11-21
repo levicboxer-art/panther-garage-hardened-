@@ -23,6 +23,10 @@ const addDays = (date: string, days: number) => {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
 };
+const monthStart = (date: string, offset: number) => {
+  const [year, month] = date.slice(0, 10).split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1 + offset, 1)).toISOString().slice(0, 10);
+};
 const validDate = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
 export function normaliseReportWindow(from: unknown, to: unknown): ReportWindow | null {
@@ -49,10 +53,12 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
   const before = new Date(new Date(dayStart(window.to)).getTime() + 86_400_000).toISOString();
   const previousAfter = dayStart(window.previousFrom);
   const previousBefore = new Date(new Date(dayStart(window.previousTo)).getTime() + 86_400_000).toISOString();
+  const trendFrom = monthStart(window.to, -5);
 
-  const [salesRes, previousSalesRes, saleItemsRes, repairsRes, repairPartsRes, expensesRes, previousExpensesRes,
+  const [salesRes, trendSalesRes, previousSalesRes, saleItemsRes, repairsRes, repairPartsRes, expensesRes, previousExpensesRes,
     productsRes, batchesRes, movementsRes, purchaseOrdersRes, invoicesRes, customersRes, previousCustomersRes] = await Promise.all([
     supabase.from("sales").select("id,invoice_number,customer_id,payment_method,subtotal,discount,total,amount_paid,balance_due,status,created_at").gte("created_at", after).lt("created_at", before).order("created_at", { ascending: false }).limit(10000),
+    supabase.from("sales").select("total,amount_paid,status,created_at").gte("created_at", dayStart(trendFrom)).lt("created_at", before).limit(20000),
     supabase.from("sales").select("id,total,created_at,status").eq("status", "COMPLETED").gte("created_at", previousAfter).lt("created_at", previousBefore).limit(10000),
     supabase.from("sale_items").select("id,sale_id,product_id,product_name,sku,quantity,unit_price,unit_cost,line_total,sales!inner(created_at,status)").eq("sales.status", "COMPLETED").gte("sales.created_at", after).lt("sales.created_at", before).limit(20000),
     supabase.from("repair_jobs").select("id,job_number,customer_id,motorcycle_make,motorcycle_model,reported_issue,status,labour_fee,parts_total,total_cost,received_at,completed_at,collected_at").gte("received_at", after).lt("received_at", before).limit(10000),
@@ -68,11 +74,12 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
     supabase.from("customers").select("id,created_at").gte("created_at", previousAfter).lt("created_at", previousBefore).limit(10000),
   ]);
 
-  const failed = [salesRes, previousSalesRes, saleItemsRes, repairsRes, repairPartsRes, expensesRes, previousExpensesRes, productsRes, batchesRes, movementsRes, purchaseOrdersRes, invoicesRes, customersRes, previousCustomersRes].find((result) => result.error);
+  const failed = [salesRes, trendSalesRes, previousSalesRes, saleItemsRes, repairsRes, repairPartsRes, expensesRes, previousExpensesRes, productsRes, batchesRes, movementsRes, purchaseOrdersRes, invoicesRes, customersRes, previousCustomersRes].find((result) => result.error);
   if (failed?.error) throw new Error(failed.error.message);
 
   const sales = (salesRes.data || []) as Row[];
   const completedSales = sales.filter((row) => row.status === "COMPLETED");
+  const trendSales = (trendSalesRes.data || []) as Row[];
   const previousSales = (previousSalesRes.data || []) as Row[];
   const saleItems = (saleItemsRes.data || []) as Row[];
   const repairs = (repairsRes.data || []) as Row[];
@@ -98,6 +105,15 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
   const repairPending = repairs.filter((row) => !["READY", "COLLECTED", "CANCELLED"].includes(row.status));
   const repairCancelled = repairs.filter((row) => row.status === "CANCELLED");
   const repairRevenue = round(repairClosed.reduce((sum, row) => sum + n(row.total_cost), 0));
+  const serviceGroups = repairs.reduce((groups: Record<string, Row>, row) => {
+    const service = String(row.reported_issue || "Motorcycle repair").trim() || "Motorcycle repair";
+    groups[service] = groups[service] || { service, label: service, jobs: 0, revenue: 0 };
+    groups[service].jobs += 1;
+    if (["READY", "COLLECTED"].includes(row.status)) groups[service].revenue += n(row.total_cost);
+    return groups;
+  }, {});
+  const serviceRevenue = Object.values(serviceGroups).map((item) => ({ service: item.service, revenue: round(item.revenue), jobs: item.jobs })).sort((a, b) => b.revenue - a.revenue);
+  const serviceDemand = Object.values(serviceGroups).map((item) => ({ label: item.label, value: item.jobs })).sort((a, b) => b.value - a.value);
   const repairPartsRevenue = round(repairClosed.reduce((sum, row) => sum + n(row.parts_total), 0));
   const repairLabourRevenue = round(repairClosed.reduce((sum, row) => sum + n(row.labour_fee), 0));
   const repairPartsCost = round(repairParts.filter((row) => ["READY", "COLLECTED"].includes(row.repair_jobs?.status || ""))
@@ -110,6 +126,15 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
   const hasCompleteCostData = saleItems.length === 0 || saleItems.every((row) => row.unit_cost !== null && row.unit_cost !== undefined);
   const previousRevenue = round(previousSales.reduce((sum, row) => sum + n(row.total), 0));
   const previousExpenseTotal = round(previousExpenses.filter((row) => row.status === "APPROVED").reduce((sum, row) => sum + n(row.amount), 0));
+  const trendByMonth = new Map<string, { revenue: number; collected: number }>();
+  for (let offset = 0; offset < 6; offset += 1) trendByMonth.set(monthStart(window.to, offset - 5).slice(0, 7), { revenue: 0, collected: 0 });
+  for (const sale of trendSales) {
+    if (sale.status !== "COMPLETED") continue;
+    const month = String(sale.created_at || "").slice(0, 7);
+    const entry = trendByMonth.get(month);
+    if (entry) { entry.revenue += n(sale.total); entry.collected += n(sale.amount_paid); }
+  }
+  const salesTrend = [...trendByMonth].map(([month, totals]) => ({ month, revenue: round(totals.revenue), collected: round(totals.collected) }));
 
   const stockByProduct = new Map<string, { units: number; cost: number }>();
   for (const batch of batches) {
@@ -178,10 +203,10 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
       highest_gross_profit_product: highestProfitProduct?.product_name || null, highest_gross_profit_product_amount: highestProfitProduct ? n(highestProfitProduct.gross_profit) : null,
     },
     financial: { gross_sales: grossSales, discounts, net_sales_revenue: salesRevenue, spare_parts_revenue: partsRevenue, repair_service_revenue: repairRevenue, cost_of_goods_sold: hasCompleteCostData ? cogs : null, gross_profit: hasCompleteCostData ? grossProfit : null, gross_profit_margin_pct: hasCompleteCostData && salesRevenue > 0 ? round((grossProfit / salesRevenue) * 100) : null, operating_expenses: operatingExpenses, net_operating_result: hasCompleteCostData ? netOperatingResult : null, result_status: resultStatus, refunds: null, note: "Refund records are not present in the PGMS schema; refund amount is not available rather than zero." },
-    sales: { invoices: completedSales.map((row) => ({ invoice: row.invoice_number, date: row.created_at, total: n(row.total), discount: n(row.discount), amount_paid: n(row.amount_paid), balance_due: n(row.balance_due), payment_method: row.payment_method })), product_sales: productSales, average_order_value: completedSales.length ? round(salesRevenue / completedSales.length) : 0 },
+    sales: { invoices: completedSales.map((row) => ({ invoice: row.invoice_number, date: row.created_at, total: n(row.total), discount: n(row.discount), amount_paid: n(row.amount_paid), balance_due: n(row.balance_due), payment_method: row.payment_method })), trend: salesTrend, product_sales: productSales, average_order_value: completedSales.length ? round(salesRevenue / completedSales.length) : 0 },
     payments: { successful_count: completedSales.filter((row) => n(row.amount_paid) > 0).length, successful_value: collected, pending_count: null, failed_count: null, refunded_count: null, unreconciled_count: null, by_method: paymentsByMethod, transactions: completedSales.map((row) => ({ reference: row.invoice_number, date: row.created_at, amount: n(row.amount_paid), status: n(row.amount_paid) > 0 ? "RECORDED_COLLECTION" : "OUTSTANDING_BALANCE", method: row.payment_method, related_sale: row.id, reconciliation_status: "SALE_RECORD_ONLY" })) },
     inventory: { summary: { distinct_products: inventory.length, units_in_stock: inventory.reduce((sum, row) => sum + row.quantity_in_stock, 0), stock_purchase_value: stockPurchaseValue, estimated_potential_sales_value: potentialSalesValue, low_stock_products: inventory.filter((row) => row.stock_status === "LOW_STOCK").length, out_of_stock_products: inventory.filter((row) => row.stock_status === "OUT_OF_STOCK").length }, products: inventory, movements },
-    repairs: { summary: { total_jobs: repairs.length, completed_jobs: repairClosed.length, pending_jobs: repairPending.length, cancelled_jobs: repairCancelled.length, repair_service_revenue: repairRevenue, parts_consumed: repairParts.reduce((sum, row) => sum + n(row.quantity), 0), average_completion_days: repairClosed.length ? round(repairClosed.reduce((sum, row) => sum + (row.completed_at ? (new Date(row.completed_at).getTime() - new Date(row.received_at).getTime()) / 86_400_000 : 0), 0) / repairClosed.length) : null }, jobs: repairsTable },
+    repairs: { summary: { total_jobs: repairs.length, completed_jobs: repairClosed.length, pending_jobs: repairPending.length, cancelled_jobs: repairCancelled.length, repair_service_revenue: repairRevenue, parts_consumed: repairParts.reduce((sum, row) => sum + n(row.quantity), 0), average_completion_days: repairClosed.length ? round(repairClosed.reduce((sum, row) => sum + (row.completed_at ? (new Date(row.completed_at).getTime() - new Date(row.received_at).getTime()) / 86_400_000 : 0), 0) / repairClosed.length) : null }, service_demand: serviceDemand, service_revenue: serviceRevenue, jobs: repairsTable },
     expenses: { summary: { total_expenses: operatingExpenses, supplier_purchases: round(purchaseOrders.filter((row) => row.status !== "CANCELLED").reduce((sum, row) => sum + n(row.subtotal), 0)), purchase_orders: purchaseOrders.length, outstanding_supplier_balances: round(invoices.reduce((sum, row) => sum + Math.max(0, n(row.amount) - n(row.paid_amount)), 0)) }, by_category: expensesByCategory, transactions: expenses.map((row) => ({ date: row.expense_date, reference: row.reference || row.id, category: row.category, description: row.description, amount: n(row.amount), status: row.status, payment_method: row.payment_method })) },
     purchases: purchaseOrders.map((row) => ({ purchase_order: row.order_number || row.id, date: row.order_date || row.created_at, supplier_id: row.supplier_id, status: row.status, subtotal: n(row.subtotal), accounting_treatment: "INVENTORY_PURCHASE_NOT_OPERATING_EXPENSE" })),
     customers: { registered: customers.length, new_customers: customersInPeriod.length, returning_customers: returningCustomerIds.size, total_customer_orders: customerIds.size, average_order_value: completedSales.length ? round(salesRevenue / completedSales.length) : 0, most_active_customer_count: [...visits.values()].sort((a, b) => b - a).slice(0, 10), outstanding_balances: customerBalance },

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createClient } from "@/lib/supabase/server";
 import { rateLimit, rateLimitedResponse } from "@/lib/api-security";
 import { buildBusinessReport, normaliseReportWindow, REPORT_CATEGORIES, type ReportCategory } from "@/lib/business-report";
+import { createReferenceBusinessWorkbook } from "@/lib/business-report-workbook";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -171,7 +172,10 @@ export async function GET(request: Request) {
     const report = await buildBusinessReport(supabase, window, category);
     const stamp = window.from === window.to ? window.from : `${window.from}-to-${window.to}`;
     if (format === "pdf") { const pdf = await makePdf(report, category); return new Response(new Uint8Array(pdf).buffer as ArrayBuffer, { headers: { ...NO_STORE, "Content-Type": "application/pdf", "Content-Disposition": `attachment; filename="panther-legacy-garage-${category}-${stamp}.pdf"` } }); }
-    if (format === "xlsx") return new Response(await makeWorkbook(report, category), { headers: { ...NO_STORE, "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="panther-legacy-garage-${category}-${stamp}.xlsx"` } });
+    if (format === "xlsx") {
+      const workbook = category === "complete" ? await createReferenceBusinessWorkbook(report) : await makeWorkbook(report, category);
+      return new Response(workbook, { headers: { ...NO_STORE, "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="panther-legacy-garage-${category}-${stamp}.xlsx"` } });
+    }
     return jsonError("Unsupported export format.", 400);
   } catch (err) {
     console.error("Business report export failed:", err instanceof Error ? err.message : err);

@@ -26,6 +26,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "recharts": "^2.15.0",
+    "sharp": "^0.35.5",
     "tailwind-merge": "^3.7.0",
     "tailwindcss-animate": "^1.0.7",
     "three": "^0.171.0"
