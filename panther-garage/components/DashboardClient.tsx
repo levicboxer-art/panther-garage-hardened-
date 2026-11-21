@@ -7,6 +7,7 @@ import LanguageSwitcher from "@/components/LanguageSwitcher";
 import { canAccess } from "@/lib/rbac";
 import ThemeToggle, { type DashboardTheme } from "@/components/ThemeToggle";
 import SalesWorkspace from "@/components/SalesWorkspace";
+import RecentInvoicesWorkspace from "@/components/RecentInvoicesWorkspace";
 import WorkshopWorkspace from "@/components/WorkshopWorkspace";
 import PurchasingWorkspace from "@/components/PurchasingWorkspace";
 import ReportsWorkspace from "@/components/ReportsWorkspace";
@@ -25,6 +26,7 @@ import {
   LayoutDashboard,
   Boxes,
   ShoppingCart,
+  ReceiptText,
   Wrench,
   Users,
   Truck,
@@ -82,6 +84,7 @@ const nav = [
   ["Import", FileUp],
   ["Catalogue review", Tags],
   ["Sales", ShoppingCart],
+  ["Recent invoices", ReceiptText],
   ["Repairs", Wrench],
   ["Customers", Users],
   ["Bookings", Clock3],
@@ -112,6 +115,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
   const [employeeName, setEmployeeName] = useState("");
   const [employeeEmail, setEmployeeEmail] = useState("");
   const [employeePassword, setEmployeePassword] = useState("");
+  const [unreadSaleAlerts, setUnreadSaleAlerts] = useState(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
@@ -241,6 +245,46 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
     [profile.role],
   );
 
+  useEffect(() => {
+    let active = true;
+    const refreshSaleAlerts = async () => {
+      try {
+        const response = await fetch("/api/notifications?category=SALE", { cache: "no-store" });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (active) setUnreadSaleAlerts((data.notifications || []).filter((item: { read_at: string | null }) => !item.read_at).length);
+      } catch {
+        // Navigation remains available if notifications are briefly unavailable.
+      }
+    };
+    void refreshSaleAlerts();
+    const timer = window.setInterval(() => void refreshSaleAlerts(), 15000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, []);
+
+  async function navigateTo(name: string) {
+    if (name !== "Recent invoices") {
+      setTab(name);
+      return;
+    }
+    try {
+      const response = await fetch("/api/notifications?category=SALE", { cache: "no-store" });
+      if (response.ok) {
+        const data = await response.json();
+        const unread = (data.notifications || []).filter((item: { id: string; read_at: string | null }) => !item.read_at);
+        const results = await Promise.all(unread.map((item: { id: string }) => fetch("/api/notifications", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: item.id }),
+        })));
+        if (results.every((result: Response) => result.ok)) setUnreadSaleAlerts(0);
+      }
+    } catch {
+      // Keep the badge visible so acknowledgement can be retried.
+    }
+    setTab(name);
+  }
+
   return (
     <main
       className="dashboard-shell min-h-screen flex"
@@ -288,14 +332,17 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           {visibleNav.map(([name, Icon]) => (
             <button
               key={name}
-              onClick={() => setTab(name)}
+              onClick={() => void navigateTo(name)}
               title={name}
               aria-label={name}
               className={`sidebar-link ${sidebarCollapsed ? "justify-center px-0" : ""} ${
                 tab === name ? "active" : ""
               }`}
             >
-              <Icon size={17} />
+              <span className="relative inline-flex">
+                <Icon size={17} />
+                {name === "Recent invoices" && unreadSaleAlerts > 0 && <span className="absolute -right-2 -top-2 min-w-4 h-4 rounded-full bg-red-500 px-1 text-[9px] leading-4 font-bold text-white text-center" aria-label={`${unreadSaleAlerts} new sale notification${unreadSaleAlerts === 1 ? "" : "s"}`}>{unreadSaleAlerts > 9 ? "9+" : unreadSaleAlerts}</span>}
+              </span>
               {!sidebarCollapsed && name}
             </button>
           ))}
@@ -330,10 +377,13 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           {visibleNav.map(([name, Icon]) => (
             <button
               key={name}
-              onClick={() => setTab(name)}
+              onClick={() => void navigateTo(name)}
               className={`sidebar-link shrink-0 whitespace-nowrap ${tab === name ? "active" : ""}`}
             >
-              <Icon size={16} />
+              <span className="relative inline-flex">
+                <Icon size={16} />
+                {name === "Recent invoices" && unreadSaleAlerts > 0 && <span className="absolute -right-2 -top-2 min-w-4 h-4 rounded-full bg-red-500 px-1 text-[9px] leading-4 font-bold text-white text-center" aria-label={`${unreadSaleAlerts} new sale notification${unreadSaleAlerts === 1 ? "" : "s"}`}>{unreadSaleAlerts > 9 ? "9+" : unreadSaleAlerts}</span>}
+              </span>
               {name}
             </button>
           ))}
@@ -607,6 +657,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           {tab === "Sales" || tab === "Customers" ? (
             <SalesWorkspace mode={tab} products={products} onProductsChanged={refresh} />
           ) : null}
+          {tab === "Recent invoices" ? <RecentInvoicesWorkspace role={profile.role} /> : null}
           {tab === "Bookings" ? <BookingsWorkspace /> : null}
           {tab === "Online Orders" ? <OrdersWorkspace /> : null}
           {tab === "Repairs" ? <WorkshopWorkspace products={products} /> : null}
@@ -627,6 +678,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
               "Catalogue review",
               "Employees",
               "Sales",
+              "Recent invoices",
               "Customers",
               "Bookings",
               "Online Orders",
