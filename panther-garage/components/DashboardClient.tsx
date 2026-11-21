@@ -7,7 +7,6 @@ import LanguageSwitcher from "@/components/LanguageSwitcher";
 import { canAccess } from "@/lib/rbac";
 import ThemeToggle, { type DashboardTheme } from "@/components/ThemeToggle";
 import SalesWorkspace from "@/components/SalesWorkspace";
-import RecentInvoicesWorkspace from "@/components/RecentInvoicesWorkspace";
 import WorkshopWorkspace from "@/components/WorkshopWorkspace";
 import PurchasingWorkspace from "@/components/PurchasingWorkspace";
 import ReportsWorkspace from "@/components/ReportsWorkspace";
@@ -26,7 +25,6 @@ import {
   LayoutDashboard,
   Boxes,
   ShoppingCart,
-  ReceiptText,
   Wrench,
   Users,
   Truck,
@@ -79,11 +77,11 @@ const money = (n: number) =>
 
 const nav = [
   ["Overview", LayoutDashboard],
+  ["Insights", BrainCircuit],
   ["Inventory", Boxes],
   ["Import", FileUp],
   ["Catalogue review", Tags],
   ["Sales", ShoppingCart],
-  ["Recent invoices", ReceiptText],
   ["Repairs", Wrench],
   ["Customers", Users],
   ["Bookings", Clock3],
@@ -94,7 +92,6 @@ const nav = [
   ["Reports", FileBarChart],
   ["Shift reports", ClipboardList],
   ["Team chat", MessageCircle],
-  ["Insights", BrainCircuit],
   ["Settings", Settings],
 ] as const;
 
@@ -610,7 +607,6 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           {tab === "Sales" || tab === "Customers" ? (
             <SalesWorkspace mode={tab} products={products} onProductsChanged={refresh} />
           ) : null}
-          {tab === "Recent invoices" ? <RecentInvoicesWorkspace role={profile.role} /> : null}
           {tab === "Bookings" ? <BookingsWorkspace /> : null}
           {tab === "Online Orders" ? <OrdersWorkspace /> : null}
           {tab === "Repairs" ? <WorkshopWorkspace products={products} /> : null}
@@ -631,7 +627,6 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
               "Catalogue review",
               "Employees",
               "Sales",
-              "Recent invoices",
               "Customers",
               "Bookings",
               "Online Orders",

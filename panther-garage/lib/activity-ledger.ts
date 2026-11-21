@@ -59,7 +59,7 @@ export async function computeActivityLedger(supabase: SupabaseClient, days: numb
     ordersRes, bookingsRes, reportsRes, importsRes, pricedRes, profilesRes, stockRes,
   ] = await Promise.all([
     supabase.from("sales")
-      .select("id,invoice_number,total,amount_paid,balance_due,payment_method,status,created_at,created_by")
+      .select("id,invoice_number,total,amount_paid,balance_due,payment_method,status,created_at,sold_by")
       .gte("created_at", since).limit(5000),
     supabase.from("sale_items")
       .select("sale_id,line_total,sales!inner(created_at)")
@@ -148,7 +148,7 @@ export async function computeActivityLedger(supabase: SupabaseClient, days: numb
     }
     return staff.get(key)!;
   };
-  for (const s of completed) { const r = touch(s.created_by); if (r) { r.sales_count += 1; r.sales_revenue += num(s.total); } }
+  for (const s of completed) { const r = touch(s.sold_by); if (r) { r.sales_count += 1; r.sales_revenue += num(s.total); } }
   for (const j of jobs) { const r = touch(j.received_by); if (r) r.repairs_received += 1; }
   for (const b of batches) { const r = touch(b.received_by); if (r) { r.receipts_units += num(b.quantity_received); r.receipts_value += num(b.quantity_received) * num(b.unit_cost); } }
   for (const p of pos) { const r = touch(p.created_by); if (r) r.purchases_ordered += 1; }
@@ -166,7 +166,7 @@ export async function computeActivityLedger(supabase: SupabaseClient, days: numb
     if (ts) stream.push({ ts, type, ref, actor, detail, amount: amount === null ? null : round2(amount) });
   };
   for (const s of sales)
-    push(s.created_at, "SALE", s.invoice_number, nameOf(s.created_by),
+    push(s.created_at, "SALE", s.invoice_number, nameOf(s.sold_by),
       `${s.status}${s.payment_method ? ` · ${s.payment_method.toLowerCase().replace("_", " ")}` : ""}${num(s.balance_due) > 0 ? ` · balance ${Math.round(num(s.balance_due))}` : ""}`,
       num(s.total));
   for (const j of jobs)
