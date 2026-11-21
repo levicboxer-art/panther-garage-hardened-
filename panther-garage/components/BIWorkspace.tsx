@@ -25,6 +25,7 @@ import {
   ComposedChart,
   Legend,
   Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -116,6 +117,14 @@ type BiData = {
   };
 };
 
+type LifetimeData = {
+  period_start: string | null;
+  period_end: string;
+  realized: { sales_count: number; units_sold: number; revenue: number; collected: number; gross_profit: number; gross_margin_pct: number | null };
+  inventory_projection: { units_remaining: number; revenue_if_all_sold: number; cost_of_remaining_stock: number; gross_profit_if_all_sold: number; total_revenue_if_all_sold: number; total_gross_profit_if_all_sold: number };
+  trend: { date: string; revenue: number; gross_profit: number; cumulative_revenue: number; cumulative_gross_profit: number }[];
+};
+
 const WINDOWS = [30, 90, 180, 365];
 const PIE_COLORS = ["#c7f36b", "#7dd3fc", "#fbbf24", "#f472b6", "#a78bfa"];
 
@@ -146,6 +155,8 @@ const tooltipStyle = {
 
 export default function BIWorkspace() {
   const [data, setData] = useState<BiData | null>(null);
+  const [lifetime, setLifetime] = useState<LifetimeData | null>(null);
+  const [lifetimeError, setLifetimeError] = useState("");
   const [days, setDays] = useState(90);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -153,11 +164,18 @@ export default function BIWorkspace() {
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
+    setLifetimeError("");
     try {
-      const response = await fetch(`/api/bi?days=${days}`, { cache: "no-store" });
+      const [response, lifetimeResponse] = await Promise.all([
+        fetch(`/api/bi?days=${days}`, { cache: "no-store" }),
+        fetch("/api/lifetime-analytics", { cache: "no-store" }),
+      ]);
       const json = await response.json();
+      const lifetimeJson = await lifetimeResponse.json();
       if (!response.ok) throw new Error(json.error || "Could not load business insights.");
       setData(json as BiData);
+      if (lifetimeResponse.ok) setLifetime(lifetimeJson as LifetimeData);
+      else setLifetimeError(lifetimeJson.error || "Lifetime analytics are temporarily unavailable.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load business insights.");
     } finally {
@@ -257,6 +275,52 @@ export default function BIWorkspace() {
           </button>
         </div>
       </div>
+
+      {/* Lifetime executive performance */}
+      {lifetimeError && <div className="card border-red-300/30 p-4 text-sm text-red-200">{lifetimeError}</div>}
+      {lifetime && (
+        <div className="card overflow-hidden border-lime/20 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="tag flex items-center gap-2"><Wallet size={14} /> LIFETIME EXECUTIVE PERFORMANCE</div>
+              <h3 className="mt-1 text-xl font-bold">The full commercial picture</h3>
+              <p className="mt-1 text-xs muted">
+                Realized from {lifetime.period_start ? new Date(lifetime.period_start).toLocaleDateString() : "the first recorded sale"} through today, plus the value of current active stock at its configured selling prices.
+              </p>
+            </div>
+            <span className="badge">LIVE · FIFO COST BASIS</span>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-white/[.08] bg-white/[.025] p-4"><div className="text-xs muted">Total sales revenue</div><div className="stat mt-2 text-2xl">{money(lifetime.realized.revenue)}</div><div className="mt-1 text-[11px] muted">{lifetime.realized.sales_count} completed invoices</div></div>
+            <div className="rounded-xl border border-lime/25 bg-lime/5 p-4"><div className="text-xs muted">Realized gross profit</div><div className="stat mt-2 text-2xl lime">{money(lifetime.realized.gross_profit)}</div><div className="mt-1 text-[11px] muted">{lifetime.realized.gross_margin_pct == null ? "Margin unavailable" : `${lifetime.realized.gross_margin_pct}% lifetime margin`}</div></div>
+            <div className="rounded-xl border border-sky-300/20 bg-sky-300/5 p-4"><div className="text-xs muted">Revenue if stock sells</div><div className="stat mt-2 text-2xl">{money(lifetime.inventory_projection.total_revenue_if_all_sold)}</div><div className="mt-1 text-[11px] muted">Includes {lifetime.inventory_projection.units_remaining.toLocaleString()} units remaining</div></div>
+            <div className="rounded-xl border border-amber-300/25 bg-amber-300/5 p-4"><div className="text-xs muted">Gross profit if stock sells</div><div className="stat mt-2 text-2xl text-amber-200">{money(lifetime.inventory_projection.total_gross_profit_if_all_sold)}</div><div className="mt-1 text-[11px] muted">Realized profit plus remaining-stock upside</div></div>
+          </div>
+          <div className="mt-4 grid gap-4 xl:grid-cols-[1.5fr_1fr]">
+            <div className="rounded-xl border border-white/[.08] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2"><div><h4 className="font-semibold">Cumulative growth since launch</h4><p className="mt-1 text-[11px] muted">Revenue and gross profit accumulated by completed sale day.</p></div><span className="text-[11px] muted">{lifetime.trend.length} active sale days</span></div>
+              <div className="mt-3 h-64">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={lifetime.trend}>
+                    <CartesianGrid stroke="rgba(255,255,255,.07)" vertical={false} />
+                    <XAxis dataKey="date" tickFormatter={dayLabel} tick={{ fontSize: 10, fill: "#8b9491" }} minTickGap={40} />
+                    <YAxis tickFormatter={shortMoney} tick={{ fontSize: 10, fill: "#8b9491" }} width={48} />
+                    <Tooltip {...tooltipStyle} formatter={(value: any, name: any) => [money(Number(value)), name === "cumulative_revenue" ? "Revenue" : "Gross profit"]} />
+                    <Line type="monotone" dataKey="cumulative_revenue" stroke="#7dd3fc" strokeWidth={2.5} dot={false} />
+                    <Line type="monotone" dataKey="cumulative_gross_profit" stroke="#c7f36b" strokeWidth={2.5} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-2 flex gap-4 text-[11px] muted"><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-sky-300" />Revenue</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-lime" />Gross profit</span></div>
+            </div>
+            <div className="rounded-xl border border-white/[.08] p-4">
+              <h4 className="font-semibold">Remaining-stock opportunity</h4>
+              <p className="mt-1 text-[11px] muted">What current active inventory contributes if sold at configured prices.</p>
+              <div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="muted">Stock revenue</span><b>{money(lifetime.inventory_projection.revenue_if_all_sold)}</b></div><div className="flex justify-between gap-3"><span className="muted">Stock cost (FIFO)</span><b>{money(lifetime.inventory_projection.cost_of_remaining_stock)}</b></div><div className="flex justify-between gap-3 border-t border-line pt-3"><span className="font-semibold">Future gross profit</span><b className="lime">{money(lifetime.inventory_projection.gross_profit_if_all_sold)}</b></div><div className="flex justify-between gap-3"><span className="muted">Units still available</span><b>{lifetime.inventory_projection.units_remaining.toLocaleString()}</b></div></div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* KPI row */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
