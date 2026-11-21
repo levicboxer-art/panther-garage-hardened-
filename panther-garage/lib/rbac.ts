@@ -11,7 +11,7 @@
  *  - Staff run day-to-day operations: sell, service, book, deliver, report.
  *  - Owner-only money levers: supplier costs and payments (Purchases),
  *    reorder economics (Restocking), catalogue creation/price confirmation
- *    (New product, Edit, Receive goods), staff accounts, bulk imports and
+ *    (New product and Edit, including goods receiving), staff accounts, bulk imports and
  *    business analytics (Insights/BI).
  */
 

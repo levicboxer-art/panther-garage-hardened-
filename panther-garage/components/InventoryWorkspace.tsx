@@ -137,7 +137,6 @@ export default function InventoryWorkspace({
   const [removeImage, setRemoveImage] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const [receiptRow, setReceiptRow] = useState<InventoryRow | null>(null);
   const [receiptQuantity, setReceiptQuantity] = useState("1");
   const [receiptCost, setReceiptCost] = useState("0");
   const [receiptReference, setReceiptReference] = useState("");
@@ -256,6 +255,9 @@ export default function InventoryWorkspace({
     setImageFile(null);
     setImagePreview("");
     setRemoveImage(false);
+    setReceiptQuantity("1");
+    setReceiptCost(row.purchase_cost ? String(Math.round(row.purchase_cost)) : "0");
+    setReceiptReference("");
     setError("");
   }
 
@@ -383,9 +385,9 @@ export default function InventoryWorkspace({
     }
   }
 
-  async function receiveStock(event: React.FormEvent) {
-    event.preventDefault();
-    if (!receiptRow) return;
+  async function receiveStock(event?: React.FormEvent) {
+    event?.preventDefault();
+    if (!form || form.mode !== "edit" || !form.id) return;
     setSaving(true);
     setError("");
     try {
@@ -393,7 +395,7 @@ export default function InventoryWorkspace({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          product_id: receiptRow.id,
+          product_id: form.id,
           quantity: Number(receiptQuantity),
           unit_cost: Number(receiptCost),
           receipt_reference: receiptReference || null,
@@ -401,7 +403,6 @@ export default function InventoryWorkspace({
       });
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || "Goods receipt failed.");
-      setReceiptRow(null);
       setReceiptQuantity("1");
       setReceiptCost("0");
       setReceiptReference("");
@@ -475,7 +476,7 @@ export default function InventoryWorkspace({
           <CheckCircle2 size={16} /> {notice}
         </div>
       )}
-      {error && !form && !receiptRow && (
+      {error && !form && (
         <div className="card border-red-300/30 p-4 text-sm text-red-200">{error}</div>
       )}
 
@@ -640,20 +641,6 @@ export default function InventoryWorkspace({
                     <td>
                       <div className="flex flex-wrap gap-2">
                         {canEdit && (
-                          <button
-                            className="pill"
-                            onClick={() => {
-                              setReceiptRow(row);
-                              setReceiptQuantity("1");
-                              setReceiptCost(row.purchase_cost ? String(Math.round(row.purchase_cost)) : "0");
-                              setReceiptReference("");
-                              setError("");
-                            }}
-                          >
-                            Receive
-                          </button>
-                        )}
-                        {canEdit && (
                           <button className="pill" onClick={() => openEdit(row)}>
                             <Pencil size={12} /> Edit
                           </button>
@@ -764,7 +751,9 @@ export default function InventoryWorkspace({
                   {form.mode === "create" ? "Register a product" : form.name}
                 </h3>
                 <p className="mt-1 text-xs muted">
-                  Product registration never increases stock. Receive goods separately.
+                  {form.mode === "create"
+                    ? "Product registration never increases stock. Save the product first, then use Edit to receive goods."
+                    : "Update product details or post a costed goods receipt without changing stock directly."}
                 </p>
               </div>
               <button type="button" onClick={closeForm} aria-label="Close">
@@ -950,6 +939,62 @@ export default function InventoryWorkspace({
                   Active in the public catalogue
                 </label>
               )}
+
+              {form.mode === "edit" && canEdit && (
+                <div className="sm:col-span-2 rounded-xl border border-lime/20 bg-lime/5 p-4">
+                  <div className="tag">INVENTORY RECEIPT</div>
+                  <h4 className="mt-1 font-semibold">Receive new stock</h4>
+                  <p className="mt-1 text-[11px] muted">
+                    Posts a separate costed FIFO batch and stock movement. It never edits the
+                    quantity directly.
+                  </p>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                    <label className="text-xs muted">
+                      Quantity received
+                      <input
+                        className="field mt-2"
+                        type="number"
+                        min="1"
+                        step="1"
+                        required
+                        value={receiptQuantity}
+                        onChange={(event) => setReceiptQuantity(event.target.value)}
+                      />
+                    </label>
+                    <label className="text-xs muted">
+                      Cost per unit (RWF)
+                      <input
+                        className="field mt-2"
+                        type="number"
+                        min="0"
+                        step="1"
+                        required
+                        value={receiptCost}
+                        onChange={(event) => setReceiptCost(event.target.value)}
+                      />
+                    </label>
+                    <label className="text-xs muted">
+                      Receipt / invoice reference
+                      <input
+                        className="field mt-2"
+                        value={receiptReference}
+                        onChange={(event) => setReceiptReference(event.target.value)}
+                        placeholder="Optional supplier reference"
+                      />
+                    </label>
+                  </div>
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void receiveStock()}
+                      className="btn btn-ghost border border-lime/30 text-xs text-lime"
+                    >
+                      {saving ? "Posting…" : "Post receipt"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mt-6 flex flex-wrap justify-end gap-2">
@@ -965,74 +1010,6 @@ export default function InventoryWorkspace({
         </div>
       )}
 
-      {receiptRow && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-sm">
-          <form onSubmit={receiveStock} className="card w-full max-w-md p-6">
-            <div className="mb-5 flex items-start justify-between gap-4">
-              <div>
-                <div className="tag">GOODS RECEIPT</div>
-                <h3 className="mt-1 text-xl font-bold">Receive stock</h3>
-                <p className="mt-1 text-xs muted">{receiptRow.name}</p>
-              </div>
-              <button type="button" onClick={() => setReceiptRow(null)} aria-label="Close">
-                <X />
-              </button>
-            </div>
-
-            {error && (
-              <div className="mb-4 rounded-lg border border-red-300/30 bg-red-300/5 p-3 text-sm text-red-200">
-                {error}
-              </div>
-            )}
-
-            <label className="text-xs muted">
-              Quantity received
-              <input
-                className="field mt-2 mb-4"
-                type="number"
-                min="1"
-                step="1"
-                required
-                value={receiptQuantity}
-                onChange={(event) => setReceiptQuantity(event.target.value)}
-              />
-            </label>
-            <label className="text-xs muted">
-              Purchase cost per unit (RWF)
-              <input
-                className="field mt-2 mb-4"
-                type="number"
-                min="0"
-                step="1"
-                required
-                value={receiptCost}
-                onChange={(event) => setReceiptCost(event.target.value)}
-              />
-            </label>
-            <label className="text-xs muted">
-              Receipt / invoice reference
-              <input
-                className="field mt-2 mb-4"
-                value={receiptReference}
-                onChange={(event) => setReceiptReference(event.target.value)}
-                placeholder="Optional supplier reference"
-              />
-            </label>
-            <p className="mb-4 text-[11px] muted">
-              This posts a physical goods receipt. It creates a separate costed FIFO batch and a
-              stock movement; it never edits the quantity directly.
-            </p>
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setReceiptRow(null)} className="btn btn-ghost text-xs">
-                Cancel
-              </button>
-              <button type="submit" disabled={saving} className="btn btn-primary text-xs">
-                {saving ? "Posting…" : "Post receipt"}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
     </div>
   );
 }
