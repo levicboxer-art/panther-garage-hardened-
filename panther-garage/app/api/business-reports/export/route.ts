@@ -20,22 +20,23 @@ function label(category: string) { return ({ complete: "Complete Business Report
 function reportRows(report: any, category: ReportCategory) {
   const sheets: Record<string, Record<string, unknown>[]> = {
     "business_summary": [report.executive_summary],
-    "sales_report": report.sales.invoices,
-    "payments_report": report.payments.transactions,
-    "inventory_report": report.inventory.products,
+    "sales_detail": report.sales.invoices,
+    "product_performance": report.sales.product_sales,
+    "payments": report.payments.transactions,
+    "inventory_snapshot": report.inventory.products,
     "stock_movements": report.inventory.movements,
-    "repairs_report": report.repairs.jobs,
-    "expenses_report": report.expenses.transactions,
-    "purchases_report": [],
+    "repairs": report.repairs.jobs,
+    "expenses": report.expenses.transactions,
+    "purchases": report.purchases,
     "customers_report": [{ registered: report.customers.registered, new_customers: report.customers.new_customers, returning_customers: report.customers.returning_customers, total_customer_orders: report.customers.total_customer_orders, average_order_value: report.customers.average_order_value }],
-    "management_insights": report.insights,
+    "management_alerts": report.insights,
   };
   if (category === "financial") return { financial_report: [report.financial] };
-  if (category === "sales") return { sales_report: sheets.sales_report };
-  if (category === "payments") return { payments_report: sheets.payments_report };
-  if (category === "inventory") return { inventory_report: sheets.inventory_report, stock_movements: sheets.stock_movements };
-  if (category === "repairs") return { repairs_report: sheets.repairs_report };
-  if (category === "expenses") return { expenses_report: sheets.expenses_report, purchases_report: sheets.purchases_report };
+  if (category === "sales") return { sales_detail: sheets.sales_detail, product_performance: sheets.product_performance };
+  if (category === "payments") return { payments: sheets.payments };
+  if (category === "inventory") return { inventory_snapshot: sheets.inventory_snapshot, stock_movements: sheets.stock_movements };
+  if (category === "repairs") return { repairs: sheets.repairs };
+  if (category === "expenses") return { expenses: sheets.expenses, purchases: sheets.purchases };
   if (category === "customers") return { customers_report: sheets.customers_report };
   return sheets;
 }
@@ -47,7 +48,7 @@ async function makeWorkbook(report: any, category: ReportCategory) {
   const entries = reportRows(report, category);
   const title = label(category);
   for (const [name, rows] of Object.entries(entries)) {
-    const sheetName = name === "business_summary" ? "00_Executive_Summary" : ({ sales_report: "01_Sales", payments_report: "02_Payments", inventory_report: "03_Inventory", stock_movements: "04_Stock_Movements", repairs_report: "05_Repairs", expenses_report: "06_Expenses", purchases_report: "07_Purchases", customers_report: "08_Customers", management_insights: "09_Insights", financial_report: "01_Financial" } as Record<string, string>)[name] || name.slice(0, 31);
+    const sheetName = name === "business_summary" ? "00_Executive_Summary" : ({ sales_detail: "01_Sales_Detail", product_performance: "02_Product_Performance", payments: "03_Payments", inventory_snapshot: "04_Inventory", stock_movements: "05_Stock_Movements", repairs: "06_Repairs", expenses: "07_Expenses", management_alerts: "08_Management_Alerts", financial_report: "01_Financial", customers_report: "08_Customers", purchases: "07_Purchases" } as Record<string, string>)[name] || name.slice(0, 31);
     const sheet = workbook.addWorksheet(sheetName);
     sheet.addRow(["Panther Legacy Garage", title]);
     sheet.addRow(["Reporting period", `${report.meta.from} to ${report.meta.to}`]);
