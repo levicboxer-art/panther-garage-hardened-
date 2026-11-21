@@ -118,3 +118,14 @@ export function dbErrorResponse(status = 400, error?: unknown) {
 export function serverErrorResponse() {
   return NextResponse.json({ error: "The service is temporarily unavailable." }, { status: 503 });
 }
+
+/** Require browser mutations to originate from this exact application origin. */
+export function isSameOriginRequest(request: Request) {
+  const origin = request.headers.get("origin");
+  if (!origin) return false;
+  try {
+    return new URL(origin).origin === new URL(request.url).origin;
+  } catch {
+    return false;
+  }
+}
