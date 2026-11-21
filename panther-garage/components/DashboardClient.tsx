@@ -22,6 +22,7 @@ import CatalogueReviewWorkspace from "@/components/CatalogueReviewWorkspace";
 import BIWorkspace from "@/components/BIWorkspace";
 import AssistantPanel from "@/components/AssistantPanel";
 import ShiftReportsWorkspace from "@/components/ShiftReportsWorkspace";
+import GlassyDashboard from "@/components/ui/glassy-dashboard";
 import {
   LayoutDashboard,
   Boxes,
@@ -33,7 +34,6 @@ import {
   FileBarChart,
   Settings,
   LogOut,
-  Bell,
   Plus,
   ArrowUpRight,
   PackageCheck,
@@ -69,13 +69,6 @@ type Props = {
   profile: { id: string; full_name: string; role: "BOSS" | "EMPLOYEE"; email: string };
   initialProducts: Product[];
 };
-
-const money = (n: number) =>
-  new Intl.NumberFormat("en-RW", {
-    style: "currency",
-    currency: "RWF",
-    maximumFractionDigits: 0,
-  }).format(n);
 
 const nav = [
   ["Overview", LayoutDashboard],
@@ -120,8 +113,6 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
-
-  const low = products.filter((p) => p.active && p.stock <= Math.max(p.minimum_stock, 2));
 
   // The light theme is a BOSS-only preference. Employees always keep the
   // standard dashboard theme so they cannot leave the workspace unreadable.
@@ -425,7 +416,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
         </header>
 
         <div className="p-5 md:p-8 max-w-[1400px] mx-auto">
-          <div className="flex flex-wrap justify-between items-center gap-3 mb-7">
+          {tab !== "Overview" && <div className="flex flex-wrap justify-between items-center gap-3 mb-7">
             <div>
               <div className="tag">PANTHER LEGACY GARAGE · RWANDA</div>
               <h2 className="text-2xl font-bold mt-2">Good work starts with a clear view.</h2>
@@ -462,7 +453,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
                 <PackageCheck size={15} /> Product register
               </button>
             </div>
-          </div>
+          </div>}
 
           {/* RBAC guard: an employee who lands on an owner module (stale state,
               deep link) sees a lock card instead of the workspace. */}
@@ -478,111 +469,14 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           ) : null}
 
           {tab === "Overview" ? (
-            <>
-              <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-6">
-                {[
-                  {
-                    label: "Products in catalogue",
-                    value: String(products.filter((p) => p.active).length),
-                    sub: "Live database records",
-                    icon: Boxes,
-                  },
-                  {
-                    label: "Physical stock units",
-                    value: String(products.reduce((s, p) => s + p.stock, 0)),
-                    sub: "Across recorded batches",
-                    icon: PackageCheck,
-                  },
-                  {
-                    label: "Low-stock alerts",
-                    value: String(low.length),
-                    sub: "Two units or below needs attention",
-                    icon: Bell,
-                  },
-                  {
-                    label: "Active staff role",
-                    value: profile.role,
-                    sub: "Verified staff profile",
-                    icon: ShieldCheck,
-                  },
-                ].map((s, i) => (
-                  <div className="card p-5" key={i}>
-                    <div className="flex justify-between text-xs muted">
-                      <span>{s.label}</span>
-                      <s.icon size={17} className="lime" />
-                    </div>
-                    <div className="stat mt-3 text-2xl">{s.value}</div>
-                    <div className="text-[11px] muted mt-2">{s.sub}</div>
-                  </div>
-                ))}
-              </div>
-              <div className="grid xl:grid-cols-[1.4fr_1fr] gap-4">
-                <div className="card p-5">
-                  <div className="flex justify-between items-center mb-5">
-                    <div>
-                      <h3 className="font-bold">Inventory overview</h3>
-                      <p className="text-xs muted mt-1">Physical stock from FIFO batches</p>
-                    </div>
-                    <button onClick={() => setTab("Inventory")} className="text-xs lime">
-                      View inventory →
-                    </button>
-                  </div>
-                  <div className="space-y-4">
-                    {products.slice(0, 6).map((p) => (
-                      <div key={p.id}>
-                        <div className="flex justify-between text-xs mb-2">
-                          <span>{p.name}</span>
-                          <span
-                            className={
-                              p.stock <= Math.max(p.minimum_stock, 2) ? "text-amber-300" : "text-gray-400"
-                            }
-                          >
-                            {p.stock} units
-                          </span>
-                        </div>
-                        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
-                          <div
-                            className="h-full bg-lime rounded-full"
-                            style={{
-                              width: `${Math.min(
-                                100,
-                                (p.stock / Math.max(p.minimum_stock * 3, 1)) * 100,
-                              )}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                    {!products.length && (
-                      <p className="muted text-sm">No products yet. Register your first product.</p>
-                    )}
-                  </div>
-                </div>
-                <div className="card p-5">
-                  <h3 className="font-bold">Attention required</h3>
-                  <p className="text-xs muted mt-1 mb-5">Products that need a restock review</p>
-                  {low.length ? (
-                    low.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex justify-between items-center py-3 border-b border-line"
-                      >
-                        <div>
-                          <div className="text-sm">{p.name}</div>
-                          <div className="text-[10px] muted">{p.sku}</div>
-                        </div>
-                        <span className="badge-warn badge">{p.stock} left</span>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="text-sm muted">No low-stock products.</p>
-                  )}
-                  <div className="mt-5 text-xs muted flex gap-2">
-                    <Clock3 size={14} /> Restock alerts use actual batch stock.
-                  </div>
-                </div>
-              </div>
-            </>
+            <GlassyDashboard
+              role={profile.role}
+              theme={profile.role === "BOSS" ? theme : "dark"}
+              products={products}
+              unreadSaleAlerts={unreadSaleAlerts}
+              onNavigate={(name) => void navigateTo(name)}
+              onRefreshProducts={refresh}
+            />
           ) : null}
 
           {tab === "Inventory" ? (
