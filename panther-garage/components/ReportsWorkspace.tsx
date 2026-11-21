@@ -1,191 +1,91 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Download, RefreshCw, TrendingUp, Wallet, Package, Wrench, ShoppingBag, AlertTriangle } from "lucide-react";
+import { useMemo, useState } from "react";
+import { AlertTriangle, Download, FileBarChart, FileSpreadsheet, FileText, RefreshCw, TrendingDown, TrendingUp } from "lucide-react";
 
-type Props = { role: "BOSS" | "EMPLOYEE" };
-type ExportTarget = "month" | "all";
+type Role = "BOSS" | "EMPLOYEE";
+type Category = "complete" | "financial" | "sales" | "inventory" | "payments" | "repairs" | "expenses" | "customers";
+type Format = "pdf" | "xlsx" | "csv";
 
-const money = (amount: number) => new Intl.NumberFormat("en-RW", {
-  style: "currency",
-  currency: "RWF",
-  maximumFractionDigits: 0,
-}).format(amount || 0);
-
-function currentUtcMonth() {
-  return new Date().toISOString().slice(0, 7);
+const money = (value: unknown) => value === null || value === undefined ? "Not available" : new Intl.NumberFormat("en-RW", { style: "currency", currency: "RWF", maximumFractionDigits: 0 }).format(Number(value || 0));
+const today = () => new Date().toISOString().slice(0, 10);
+const date = (value: Date) => value.toISOString().slice(0, 10);
+function rangeFor(preset: string) {
+  const end = new Date(`${today()}T00:00:00Z`);
+  const start = new Date(end);
+  if (preset === "today") return { from: today(), to: today() };
+  if (preset === "week") { const day = end.getUTCDay(); start.setUTCDate(end.getUTCDate() - (day === 0 ? 6 : day - 1)); }
+  if (preset === "month") start.setUTCDate(1);
+  if (preset === "last_month") { start.setUTCMonth(end.getUTCMonth() - 1, 1); end.setUTCDate(0); }
+  if (preset === "quarter") { start.setUTCMonth(Math.floor(end.getUTCMonth() / 3) * 3, 1); }
+  if (preset === "year") start.setUTCMonth(0, 1);
+  return { from: date(start), to: date(end) };
 }
 
-function latestCompletedUtcMonth() {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
-}
-
-function monthReportLabel(month: string) {
-  const [year, monthNumber] = month.split("-").map(Number);
-  return new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" })
-    .format(new Date(Date.UTC(year, monthNumber - 1, 1)));
-}
-
-function monthReportFilename(month: string) {
-  const [year, monthNumber] = month.split("-").map(Number);
-  const monthName = new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" })
-    .format(new Date(Date.UTC(year, monthNumber - 1, 1)))
-    .toLowerCase();
-  return `panther-legacy-garage-${monthName}-${year}-report.csv`;
-}
-
-export default function ReportsWorkspace({ role }: Props) {
-  const today = new Date().toISOString().slice(0, 10);
-  const monthAgo = new Date(Date.now() - 29 * 86_400_000).toISOString().slice(0, 10);
-  const [from, setFrom] = useState(monthAgo);
-  const [to, setTo] = useState(today);
-  const [data, setData] = useState<any>(null);
+export default function ReportsWorkspace({ role }: { role: Role }) {
+  const initial = rangeFor("month");
+  const [preset, setPreset] = useState("month");
+  const [from, setFrom] = useState(initial.from);
+  const [to, setTo] = useState(initial.to);
+  const [category, setCategory] = useState<Category>("complete");
+  const [format, setFormat] = useState<Format>("pdf");
+  const [report, setReport] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
-  const [reportMonth, setReportMonth] = useState(latestCompletedUtcMonth);
-  const [exporting, setExporting] = useState<ExportTarget | null>(null);
-  const [exportError, setExportError] = useState("");
-  const [exportMessage, setExportMessage] = useState("");
+  const [notice, setNotice] = useState("");
 
-  async function load() {
-    setBusy(true);
-    setError("");
+  const periodLabel = useMemo(() => `${from} → ${to}`, [from, to]);
+  function selectPreset(value: string) { setPreset(value); if (value !== "custom") { const next = rangeFor(value); setFrom(next.from); setTo(next.to); } }
+  async function generate() {
+    setBusy(true); setError(""); setNotice("");
     try {
-      const response = await fetch(`/api/reports?from=${from}&to=${to}`, { cache: "no-store" });
-      const result = await response.json();
-      if (!response.ok) {
-        setError(result.error || "Could not load reports.");
-        return;
-      }
-      setData(result);
-    } catch {
-      setError("Could not load reports. Check the connection and try again.");
-    } finally {
-      setBusy(false);
-    }
+      const response = await fetch(`/api/business-reports?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&category=${category}`, { cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Could not generate the report.");
+      setReport(body);
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not generate the report."); }
+    finally { setBusy(false); }
+  }
+  async function download() {
+    setExporting(true); setError(""); setNotice("");
+    try {
+      const response = await fetch(`/api/business-reports/export?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&category=${category}&format=${format}`, { cache: "no-store" });
+      if (!response.ok) { const body = await response.json().catch(() => ({})); throw new Error(body.error || "Could not prepare the export."); }
+      const blob = await response.blob(); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = `panther-legacy-garage-${category}-${from}-to-${to}.${format === "csv" ? "zip" : format}`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url); setNotice(`${format.toUpperCase()} report downloaded.`);
+    } catch (err) { setError(err instanceof Error ? err.message : "Could not prepare the export."); }
+    finally { setExporting(false); }
   }
 
-  useEffect(() => { void load(); }, []);
+  if (role !== "BOSS") return <div className="card border-amber-300/30 p-6"><div className="flex items-center gap-2 text-amber-200"><AlertTriangle size={18} /> <b>Business reports are restricted to the BOSS account.</b></div><p className="muted mt-2 text-sm">Employees can continue using the operational workspaces. Owner-level financial calculations and exports are not exposed to employee accounts.</p></div>;
 
-  async function downloadReport(target: ExportTarget) {
-    if (target === "month" && !reportMonth) return;
-    setExporting(target);
-    setExportError("");
-    setExportMessage("");
-    try {
-      const query = target === "all" ? "period=all" : `month=${encodeURIComponent(reportMonth)}`;
-      const response = await fetch(`/api/reports/export?${query}`, { cache: "no-store" });
-      if (!response.ok) {
-        const result = await response.json().catch(() => ({}));
-        setExportError(result.error || "The CSV report could not be downloaded.");
-        return;
-      }
-
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = target === "all" ? "panther-legacy-garage-all-history-report.csv" : monthReportFilename(reportMonth);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      window.setTimeout(() => window.URL.revokeObjectURL(url), 1_000);
-      setExportMessage(target === "all" ? "All-history event report downloaded." : `${monthReportLabel(reportMonth)} event report downloaded.`);
-    } catch {
-      setExportError("The CSV report could not be downloaded. Check the connection and try again.");
-    } finally {
-      setExporting(null);
-    }
-  }
-
-  const metric = (label: string, value: string, sub: string, Icon: any) => (
-    <div className="card p-5">
-      <div className="flex justify-between text-xs muted"><span>{label}</span><Icon size={17} className="lime" /></div>
-      <div className="stat text-xl mt-3">{value}</div>
-      <div className="text-[11px] muted mt-2">{sub}</div>
-    </div>
-  );
-
+  const kpis = report?.executive_summary || {};
   return <div className="space-y-5">
     <div className="card p-5">
-      <div className="flex flex-wrap items-end gap-3 justify-between">
-        <div>
-          <h3 className="font-bold">Business performance</h3>
-          <p className="text-xs muted mt-1">Reports are calculated from recorded transactions for the selected period.</p>
-        </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="text-xs muted">From<input className="field mt-1" type="date" value={from} max={to} onChange={(event) => setFrom(event.target.value)} /></label>
-          <label className="text-xs muted">To<input className="field mt-1" type="date" value={to} min={from} max={today} onChange={(event) => setTo(event.target.value)} /></label>
-          <button className="btn btn-primary text-xs" onClick={() => void load()} disabled={busy}><RefreshCw size={14} />{busy ? "Loading…" : "Generate"}</button>
-        </div>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div><div className="tag flex items-center gap-2"><FileBarChart size={14} /> OWNER REPORTING</div><h2 className="mt-2 text-2xl font-bold">Business Reports</h2><p className="muted mt-1 max-w-2xl text-sm">Actual recorded PGMS transactions only. Profit is withheld when verified FIFO cost data is incomplete.</p></div>
+        <span className="badge">BOSS · RWF</span>
       </div>
-      {error && <p className="text-sm text-red-300 mt-4" role="alert">{error}</p>}
-
-      {role === "BOSS" && <div className="mt-5 border-t border-line pt-4">
-        <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
-          <div className="max-w-xl">
-            <h4 className="font-semibold text-sm">Download event ledger</h4>
-            <p className="text-xs muted mt-1">Download one chronological CSV for the selected calendar month. Each recorded event is a separate row with a readable category, status, reference and event details; transactions, workshop, inventory, purchasing, reports, audit history and business alerts are included. Staff chat is excluded.</p>
-          </div>
-          <div className="flex flex-wrap items-end gap-2">
-            <label className="text-xs muted">Report month<input className="field mt-1" type="month" value={reportMonth} min="2000-01" max={currentUtcMonth()} onChange={(event) => setReportMonth(event.target.value)} /></label>
-            <button className="btn btn-ghost text-xs" onClick={() => void downloadReport("month")} disabled={!!exporting || !reportMonth}>
-              <Download size={14} />{exporting === "month" ? "Preparing…" : "Download month CSV"}
-            </button>
-            <button className="btn btn-primary text-xs" onClick={() => void downloadReport("all")} disabled={!!exporting}>
-              <Download size={14} />{exporting === "all" ? "Preparing…" : "Download all history"}
-            </button>
-          </div>
-        </div>
-        {exportError && <p className="text-sm text-red-300 mt-3" role="alert">{exportError}</p>}
-        {exportMessage && <p className="text-xs text-lime mt-3" role="status">{exportMessage}</p>}
-      </div>}
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+        <label className="text-xs muted">Reporting period<select className="field mt-1" value={preset} onChange={(e) => selectPreset(e.target.value)}><option value="today">Today</option><option value="week">This Week</option><option value="month">This Month</option><option value="last_month">Last Month</option><option value="quarter">This Quarter</option><option value="year">This Year</option><option value="custom">Custom Range</option></select></label>
+        <label className="text-xs muted">Start date<input className="field mt-1" type="date" value={from} max={to} onChange={(e) => { setPreset("custom"); setFrom(e.target.value); }} /></label>
+        <label className="text-xs muted">End date<input className="field mt-1" type="date" value={to} min={from} max={today()} onChange={(e) => { setPreset("custom"); setTo(e.target.value); }} /></label>
+        <label className="text-xs muted">Report category<select className="field mt-1" value={category} onChange={(e) => setCategory(e.target.value as Category)}><option value="complete">Complete Business Report</option><option value="financial">Financial Report</option><option value="sales">Sales Report</option><option value="inventory">Inventory Report</option><option value="payments">Payment Report</option><option value="repairs">Repair Report</option><option value="expenses">Expense Report</option><option value="customers">Customer Report</option></select></label>
+        <label className="text-xs muted">Export format<select className="field mt-1" value={format} onChange={(e) => setFormat(e.target.value as Format)}><option value="pdf">PDF</option><option value="xlsx">Excel (.xlsx)</option><option value="csv">CSV package (.zip)</option></select></label>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2"><button className="btn btn-primary text-xs" onClick={() => void generate()} disabled={busy}><RefreshCw size={14} />{busy ? "Generating…" : "Generate Report"}</button><button className="btn btn-ghost text-xs" onClick={() => void download()} disabled={exporting}><Download size={14} />{exporting ? "Preparing…" : "Download Report"}</button></div>
+      {error && <p className="mt-3 text-sm text-red-300" role="alert">{error}</p>}{notice && <p className="mt-3 text-sm text-lime" role="status">{notice}</p>}
     </div>
 
-    {data && <>
-      <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
-        {metric("Sales completed", String(data.operations.sales_count), "Completed invoices", TrendingUp)}
-        {metric("Repairs received", String(data.operations.repairs_received), `${data.operations.repairs_open} currently open`, Wrench)}
-        {metric("Active products", String(data.inventory.active_products), `${data.inventory.units_on_hand} units on hand`, Package)}
-        {metric("Low-stock products", String(data.inventory.low_stock), "At or below minimum quantity", AlertTriangle)}
+    {report && <>
+      <div className="card p-5"><div className="flex flex-wrap justify-between gap-2"><div><div className="tag">EXECUTIVE SUMMARY</div><h3 className="mt-1 text-xl font-bold">{report.meta.business_name}</h3></div><div className="text-right text-xs muted">{periodLabel}<br />Generated {new Date(report.meta.generated_at).toLocaleString()}</div></div>
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[["Sales revenue", kpis.total_sales_revenue, TrendingUp], ["Successful payments", kpis.total_successful_payments_collected, FileText], ["Customer balances", kpis.outstanding_customer_balances, AlertTriangle], ["Cost of goods sold", kpis.total_cost_of_goods_sold, FileSpreadsheet], ["Gross profit", kpis.gross_profit, TrendingUp], ["Operating expenses", kpis.total_operating_expenses, FileText], ["Net operating result", kpis.net_operating_result, TrendingUp], ["Stock purchase value", kpis.total_stock_purchase_value, FileSpreadsheet], ["Potential stock sales", kpis.estimated_potential_sales_value, TrendingUp], ["Completed repairs", kpis.total_completed_repairs, FileText], ["Pending repairs", kpis.total_pending_repairs, AlertTriangle], ["Products in stock", kpis.total_products_in_stock, FileSpreadsheet]].map(([label, value, Icon]: any) => <div className="rounded-xl border border-white/[.08] bg-white/[.02] p-4" key={label}><div className="flex items-center justify-between text-xs muted"><span>{label}</span><Icon size={15} className="lime" /></div><div className="stat mt-2 text-xl">{typeof value === "number" && !String(label).includes("repairs") && !String(label).includes("Products") ? money(value) : value ?? "Not available"}</div><div className="mt-1 text-[10px] muted">{value === null ? "Not available – incomplete cost data" : report.meta.from + " to " + report.meta.to}</div></div>)}</div>
+        <div className="mt-4 grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-white/[.08] p-4 text-sm">Revenue change: <b className={kpis.revenue_change_pct !== null && kpis.revenue_change_pct < 0 ? "text-red-300" : "lime"}>{kpis.revenue_change_pct === null ? "No comparable previous period" : `${kpis.revenue_change_pct >= 0 ? "+" : ""}${kpis.revenue_change_pct}%`}</b></div><div className="rounded-xl border border-white/[.08] p-4 text-sm">Expense change: <b className={kpis.expense_change_pct !== null && kpis.expense_change_pct > 0 ? "text-amber-200" : "lime"}>{kpis.expense_change_pct === null ? "No comparable previous period" : `${kpis.expense_change_pct >= 0 ? "+" : ""}${kpis.expense_change_pct}%`}</b></div></div>
       </div>
 
-      {role === "BOSS" && data.finance && <>
-        <h3 className="font-bold">Financial summary <span className="text-xs muted font-normal">· RWF</span></h3>
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
-          {metric("Sales revenue", money(data.finance.revenue), "Completed sales value", TrendingUp)}
-          {metric("Payments collected", money(data.finance.collected), "Cash received against sales", Wallet)}
-          {metric("Approved expenses", money(data.finance.approved_expenses), "Approved operating expenses", Wallet)}
-          {metric("Customer balances", money(data.finance.customer_balance), "Outstanding customer amounts", AlertTriangle)}
-          {metric("Pending expenses", money(data.finance.pending_expenses), "Awaiting boss review", AlertTriangle)}
-          {metric("Purchase order value", money(data.finance.purchase_order_value), "Non-cancelled orders created in period", ShoppingBag)}
-          {metric("Supplier invoice outstanding", money(data.finance.supplier_invoice_outstanding), "Balances on invoices created in period", Wallet)}
-          {metric("Repairs completed", String(data.operations.repairs_completed), "Ready or collected repair jobs", Wrench)}
-        </div>
-        <div className="card p-5">
-          <h3 className="font-bold mb-3">Sales by payment method</h3>
-          {data.sales_by_method.length ? data.sales_by_method.map((item: any) => (
-            <div key={item.method} className="flex justify-between py-2 border-b border-line text-sm"><span>{item.method.replaceAll("_", " ")}</span><b>{money(item.total)}</b></div>
-          )) : <p className="muted text-sm">No completed sales in this period.</p>}
-        </div>
-        <div className="card p-5">
-          <h3 className="font-bold mb-3">Recent completed invoices</h3>
-          <div className="table-wrap"><table><thead><tr><th>INVOICE</th><th>DATE</th><th>TOTAL</th><th>COLLECTED</th><th>BALANCE</th></tr></thead><tbody>
-            {data.recent_sales.map((sale: any) => <tr key={sale.id}><td>{sale.invoice_number}</td><td>{new Date(sale.created_at).toLocaleDateString()}</td><td>{money(sale.total)}</td><td>{money(sale.amount_paid)}</td><td>{money(sale.balance_due)}</td></tr>)}
-          </tbody></table>{!data.recent_sales.length && <p className="muted p-4 text-sm">No invoices recorded in this period.</p>}</div>
-        </div>
-      </>}
+      <div className="grid gap-4 xl:grid-cols-2"><div className="card p-5"><h3 className="font-bold">Financial performance</h3><div className="mt-4 space-y-2 text-sm">{Object.entries(report.financial).filter(([key]) => key !== "note").map(([key, value]) => <div className="flex justify-between gap-4 border-b border-line py-2" key={key}><span className="muted capitalize">{key.replaceAll("_", " ")}</span><b>{typeof value === "number" ? money(value) : value === null ? "Not available – incomplete cost data" : String(value)}</b></div>)}</div><p className="muted mt-4 text-xs">{report.financial.note}</p></div><div className="card p-5"><h3 className="font-bold">Management insights</h3><div className="mt-4 space-y-3">{report.insights.length ? report.insights.map((item: any, index: number) => <div className={`rounded-xl border p-3 ${item.severity === "RED" ? "border-red-300/30 bg-red-300/5" : "border-amber-300/25 bg-amber-300/5"}`} key={index}><div className="flex gap-2 text-sm font-semibold"><span className="badge">{item.severity}</span>{item.issue}</div><p className="muted mt-2 text-xs">Metric: {item.metric}. Recommended action: {item.recommended_action}</p></div>) : <p className="muted text-sm">No alerts were generated for this period.</p>}</div></div></div>
 
-      <div className="card p-5">
-        <h3 className="font-bold mb-3">Low-stock review</h3>
-        {data.inventory.low_stock_products.length ? data.inventory.low_stock_products.map((product: any) => (
-          <div key={product.sku} className="flex justify-between items-center border-b border-line py-3 text-sm">
-            <div><b>{product.name}</b><div className="text-xs muted">{product.sku}</div></div>
-            <span className="badge badge-warn">{product.stock} / min {product.minimum_stock}</span>
-          </div>
-        )) : <p className="muted text-sm">No products currently meet the low-stock condition.</p>}
-      </div>
+      <div className="card p-5"><h3 className="font-bold">Data availability</h3><div className="mt-3 grid gap-2 text-xs muted sm:grid-cols-3"><p>{report.availability.profit}</p><p>{report.availability.payments}</p><p>{report.availability.repair_payments}</p></div></div>
     </>}
   </div>;
 }
