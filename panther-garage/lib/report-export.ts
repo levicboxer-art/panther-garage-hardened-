@@ -125,29 +125,105 @@ async function readRowsByIds(
 
 const numberOrNull = (value: unknown) => value === null || value === undefined || value === "" ? null : value;
 const text = (value: unknown) => value === null || value === undefined ? "" : String(value);
-const json = (value: unknown) => value === null || value === undefined ? "" : JSON.stringify(value);
 const isoDay = (value: string) => value.length === 10 ? `${value}T12:00:00.000Z` : value;
 
 const CSV_COLUMNS = [
+  "Event date and time (UTC)",
   "Report period",
-  "Generated (UTC)",
-  "Event time (UTC)",
-  "Event type",
+  "Category",
+  "Event",
   "Reference",
   "Status",
-  "Actor",
+  "Recorded by",
   "Customer / supplier",
-  "Description",
+  "Event summary",
   "Product SKU",
-  "Quantity",
+  "Quantity / change",
   "Unit price (RWF)",
   "Amount (RWF)",
-  "Paid (RWF)",
-  "Balance (RWF)",
+  "Paid / received (RWF)",
+  "Outstanding balance (RWF)",
   "Payment method",
+  "Additional event details",
   "Record ID",
-  "Details (JSON)",
+  "Export generated (UTC)",
 ] as const;
+
+function readableWords(value: string) {
+  return value.toLowerCase().replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+    .replace(/\bRwf\b/g, "RWF").replace(/\bSku\b/g, "SKU");
+}
+
+function eventCategory(eventType: string) {
+  if (eventType.startsWith("SALE")) return "Sales";
+  if (eventType.startsWith("REPAIR")) return "Workshop";
+  if (eventType.startsWith("STOCK_")) return "Inventory";
+  if (["PURCHASE_ORDER", "SUPPLIER_INVOICE", "SUPPLIER_PAYMENT"].includes(eventType)) return "Purchasing";
+  if (eventType === "EXPENSE") return "Expenses";
+  if (eventType === "CUSTOMER_ORDER") return "Customer orders";
+  if (eventType === "SERVICE_BOOKING") return "Bookings";
+  if (eventType.startsWith("INVENTORY_IMPORT")) return "Inventory imports";
+  if (eventType === "SHIFT_REPORT") return "Staff reports";
+  if (eventType.startsWith("AUDIT_")) return "Audit trail";
+  if (eventType.startsWith("NOTIFICATION_")) return "Business alerts";
+  if (eventType === "CUSTOMER_REGISTERED") return "Customers";
+  if (eventType === "SUPPLIER_REGISTERED") return "Suppliers";
+  return "Operations";
+}
+
+function eventLabel(eventType: string) {
+  const labels: Record<string, string> = {
+    SALE: "Sales invoice",
+    REPAIR_RECEIVED: "Repair job received",
+    REPAIR_STATUS: "Repair status changed",
+    PURCHASE_ORDER: "Purchase order recorded",
+    SUPPLIER_INVOICE: "Supplier invoice recorded",
+    SUPPLIER_PAYMENT: "Supplier payment recorded",
+    EXPENSE: "Expense recorded",
+    CUSTOMER_ORDER: "Customer order received",
+    SERVICE_BOOKING: "Service booking recorded",
+    INVENTORY_IMPORT: "Inventory import recorded",
+    INVENTORY_IMPORT_ITEM: "Import item reviewed",
+    INVENTORY_IMPORT_CONFLICT: "Import conflict recorded",
+    SHIFT_REPORT: "Shift report filed",
+    CUSTOMER_REGISTERED: "Customer registered",
+    SUPPLIER_REGISTERED: "Supplier registered",
+  };
+  if (labels[eventType]) return labels[eventType];
+  if (eventType.startsWith("STOCK_")) return `Stock movement · ${readableWords(eventType.slice(6))}`;
+  if (eventType.startsWith("AUDIT_")) return `Audit record · ${readableWords(eventType.slice(6))}`;
+  if (eventType.startsWith("NOTIFICATION_")) return `Business alert · ${readableWords(eventType.slice(13))}`;
+  return readableWords(eventType);
+}
+
+function detailLabel(key: string) {
+  return readableWords(key.replace(/_rwf$/i, " (RWF)"));
+}
+
+function formatDetailValue(value: unknown, key = ""): string {
+  if (value === null || value === undefined || value === "") return "";
+  if (Array.isArray(value)) {
+    return value.map((item, index) => {
+      const rendered = formatDetailValue(item);
+      return rendered ? (typeof item === "object" ? `Item ${index + 1}: ${rendered}` : rendered) : "";
+    }).filter(Boolean).join(" | ");
+  }
+  if (typeof value === "object") {
+    return Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => {
+      const rendered = formatDetailValue(childValue, childKey);
+      return rendered ? `${detailLabel(childKey)}: ${rendered}` : "";
+    }).filter(Boolean).join("; ");
+  }
+  if (typeof value === "boolean") return value ? "Yes" : "No";
+  if (typeof value === "number" && /(?:_rwf|amount|price|cost|fee|revenue|subtotal|total|paid|balance)/i.test(key)) {
+    return `RWF ${value.toLocaleString("en-RW", { maximumFractionDigits: 2 })}`;
+  }
+  return String(value);
+}
+
+function formatEventDetails(value: unknown) {
+  return formatDetailValue(value);
+}
 
 function csvCell(value: unknown) {
   let raw: string;
@@ -172,10 +248,10 @@ export function serializeReportCsv(events: CsvEvent[], window: ReportWindow, gen
   const lines = [CSV_COLUMNS.map(csvCell).join(",")];
   for (const event of ordered) {
     const row = [
-      window.label,
-      generatedAt,
       event.eventAt,
-      event.eventType,
+      window.label,
+      eventCategory(event.eventType),
+      eventLabel(event.eventType),
       event.reference,
       event.status,
       event.actor,
@@ -188,8 +264,9 @@ export function serializeReportCsv(events: CsvEvent[], window: ReportWindow, gen
       numberOrNull(event.paid),
       numberOrNull(event.balance),
       event.paymentMethod,
+      formatEventDetails(event.details),
       event.recordId,
-      typeof event.details === "string" ? event.details : json(event.details),
+      generatedAt,
     ];
     lines.push(row.map(csvCell).join(","));
   }

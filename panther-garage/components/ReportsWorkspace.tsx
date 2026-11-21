@@ -16,6 +16,17 @@ function currentUtcMonth() {
   return new Date().toISOString().slice(0, 7);
 }
 
+function latestCompletedUtcMonth() {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1)).toISOString().slice(0, 7);
+}
+
+function monthReportLabel(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" })
+    .format(new Date(Date.UTC(year, monthNumber - 1, 1)));
+}
+
 function monthReportFilename(month: string) {
   const [year, monthNumber] = month.split("-").map(Number);
   const monthName = new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" })
@@ -32,7 +43,7 @@ export default function ReportsWorkspace({ role }: Props) {
   const [data, setData] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [reportMonth, setReportMonth] = useState(currentUtcMonth);
+  const [reportMonth, setReportMonth] = useState(latestCompletedUtcMonth);
   const [exporting, setExporting] = useState<ExportTarget | null>(null);
   const [exportError, setExportError] = useState("");
   const [exportMessage, setExportMessage] = useState("");
@@ -80,7 +91,7 @@ export default function ReportsWorkspace({ role }: Props) {
       link.click();
       link.remove();
       window.setTimeout(() => window.URL.revokeObjectURL(url), 1_000);
-      setExportMessage(target === "all" ? "All-history event report downloaded." : `${reportMonth} event report downloaded.`);
+      setExportMessage(target === "all" ? "All-history event report downloaded." : `${monthReportLabel(reportMonth)} event report downloaded.`);
     } catch {
       setExportError("The CSV report could not be downloaded. Check the connection and try again.");
     } finally {
@@ -115,10 +126,10 @@ export default function ReportsWorkspace({ role }: Props) {
         <div className="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4">
           <div className="max-w-xl">
             <h4 className="font-semibold text-sm">Download event ledger</h4>
-            <p className="text-xs muted mt-1">A single, date-sorted CSV of recorded garage activity, including transactions, stock movements, audit history and business alerts. Staff chat is excluded.</p>
+            <p className="text-xs muted mt-1">Download one chronological CSV for the selected calendar month. Each recorded event is a separate row with a readable category, status, reference and event details; transactions, workshop, inventory, purchasing, reports, audit history and business alerts are included. Staff chat is excluded.</p>
           </div>
           <div className="flex flex-wrap items-end gap-2">
-            <label className="text-xs muted">Report month<input className="field mt-1" type="month" value={reportMonth} max={currentUtcMonth()} onChange={(event) => setReportMonth(event.target.value)} /></label>
+            <label className="text-xs muted">Report month<input className="field mt-1" type="month" value={reportMonth} min="2000-01" max={currentUtcMonth()} onChange={(event) => setReportMonth(event.target.value)} /></label>
             <button className="btn btn-ghost text-xs" onClick={() => void downloadReport("month")} disabled={!!exporting || !reportMonth}>
               <Download size={14} />{exporting === "month" ? "Preparing…" : "Download month CSV"}
             </button>
