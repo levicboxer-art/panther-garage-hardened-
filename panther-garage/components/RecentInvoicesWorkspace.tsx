@@ -48,6 +48,14 @@ const paymentLabel: Record<string, string> = {
   CREDIT: "Credit / partial",
 };
 
+async function readJsonResponse(response: Response): Promise<Record<string, any>> {
+  try {
+    return await response.json();
+  } catch {
+    return {};
+  }
+}
+
 export default function RecentInvoicesWorkspace({ role }: { role: "BOSS" | "EMPLOYEE" }) {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [alerts, setAlerts] = useState<SaleAlert[]>([]);
@@ -57,24 +65,34 @@ export default function RecentInvoicesWorkspace({ role }: { role: "BOSS" | "EMPL
   const [dismissing, setDismissing] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [salesResponse, noticeResponse] = await Promise.all([
-      fetch("/api/sales", { cache: "no-store" }),
-      fetch("/api/notifications?category=SALE&unread=true", { cache: "no-store" }),
-    ]);
-    const [salesData, noticeData] = await Promise.all([salesResponse.json(), noticeResponse.json()]);
-    if (salesResponse.ok) {
-      setInvoices(salesData.sales || []);
-      setIsBoss(Boolean(salesData.is_boss));
-      setError("");
-    } else {
-      setError(salesData.error || "Could not load recent invoices.");
+    try {
+      const [salesResult, noticeResult] = await Promise.allSettled([
+        fetch("/api/sales", { cache: "no-store" }),
+        fetch("/api/notifications?category=SALE&unread=true", { cache: "no-store" }),
+      ]);
+
+      if (salesResult.status === "fulfilled") {
+        const salesData = await readJsonResponse(salesResult.value);
+        if (salesResult.value.ok) {
+          setInvoices(Array.isArray(salesData.sales) ? salesData.sales : []);
+          setIsBoss(Boolean(salesData.is_boss));
+          setError("");
+        } else {
+          setError(salesData.error || "Could not load recent invoices.");
+        }
+      } else {
+        setError("Could not connect to load recent invoices. Please try again.");
+      }
+
+      if (noticeResult.status === "fulfilled" && noticeResult.value.ok) {
+        const noticeData = await readJsonResponse(noticeResult.value);
+        setAlerts((Array.isArray(noticeData.notifications) ? noticeData.notifications : []).filter((item: SaleAlert) =>
+          item.category === "SALE" && item.entity_type === "SALE" && !item.read_at,
+        ));
+      }
+    } finally {
+      setLoading(false);
     }
-    if (noticeResponse.ok) {
-      setAlerts((noticeData.notifications || []).filter((item: SaleAlert) =>
-        item.category === "SALE" && item.entity_type === "SALE" && !item.read_at,
-      ));
-    }
-    setLoading(false);
   }, []);
 
   useEffect(() => {

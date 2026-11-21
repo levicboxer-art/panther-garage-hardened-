@@ -176,16 +176,24 @@ export default function BIWorkspace() {
     setError("");
     setLifetimeError("");
     try {
-      const [response, lifetimeResponse] = await Promise.all([
+      const [response, lifetimeResult] = await Promise.all([
         fetch(`/api/bi?days=${days}`, { cache: "no-store" }),
-        fetch("/api/lifetime-analytics", { cache: "no-store" }),
+        fetch("/api/lifetime-analytics", { cache: "no-store" }).then(
+          (value) => ({ response: value }),
+          () => ({ response: null }),
+        ),
       ]);
       const json = await readJsonResponse(response);
-      const lifetimeJson = await readJsonResponse(lifetimeResponse);
       if (!response.ok) throw new Error(json.error || "Could not load business insights.");
       setData(json as BiData);
-      if (lifetimeResponse.ok) setLifetime(lifetimeJson as LifetimeData);
-      else setLifetimeError(lifetimeJson.error || "Lifetime analytics are temporarily unavailable.");
+      const lifetimeResponse = lifetimeResult.response;
+      if (lifetimeResponse?.ok) {
+        setLifetime((await readJsonResponse(lifetimeResponse)) as LifetimeData);
+      } else {
+        const lifetimeJson = lifetimeResponse ? await readJsonResponse(lifetimeResponse) : {};
+        setLifetime(null);
+        setLifetimeError(lifetimeJson.error || "Lifetime analytics are temporarily unavailable.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load business insights.");
     } finally {

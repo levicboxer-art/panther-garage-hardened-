@@ -17,7 +17,7 @@ export async function GET(){
   ? "product_id,product_name,sku,quantity,unit_price,unit_cost,line_total"
   : "product_id,product_name,sku,quantity,unit_price,line_total";
  const [salesResult,stockResult]=await Promise.all([
-  s.supabase.from("sales").select(`id,invoice_number,status,payment_method,subtotal,discount,total,amount_paid,balance_due,created_at,customers(full_name,phone),sale_items(${itemFields})`).order("created_at",{ascending:false}).limit(100),
+  s.supabase.from("sales").select(`id,invoice_number,status,payment_method,subtotal,discount,total,amount_paid,balance_due,created_at,customers(full_name,phone),sale_items(${itemFields})`).eq("status", "COMPLETED").order("created_at",{ascending:false}).limit(100),
   staffInventorySummary(s.supabase).catch(error=>{
    console.error("Could not load current stock for invoice details",error);
    return [];
