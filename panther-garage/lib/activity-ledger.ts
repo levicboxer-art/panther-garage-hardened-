@@ -9,6 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 const num = (v: unknown) => Number(v ?? 0);
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const dayKey = (iso: string) => iso.slice(0, 10);
+const lower = (v: unknown, fallback = "unknown") => String(v ?? fallback).toLowerCase();
 
 export type ActivityItem = {
   ts: string;
@@ -171,7 +172,7 @@ export async function computeActivityLedger(supabase: SupabaseClient, days: numb
       num(s.total));
   for (const j of jobs)
     push(j.received_at, "REPAIR", j.job_number, nameOf(j.received_by),
-      `${j.status.toLowerCase()}${j.assigned_to ? ` · assigned ${nameOf(j.assigned_to)}` : ""}${j.collected_at ? " · collected" : ""}`,
+      `${lower(j.status)}${j.assigned_to ? ` · assigned ${nameOf(j.assigned_to)}` : ""}${j.collected_at ? " · collected" : ""}`,
       num(j.total_cost));
   for (const b of batches)
     push(b.received_at, "RECEIPT", b.receipt_reference || "batch", nameOf(b.received_by),
@@ -181,21 +182,21 @@ export async function computeActivityLedger(supabase: SupabaseClient, days: numb
     if (ADJUST_TYPES.has(m.movement_type))
       push(m.created_at, m.movement_type, m.reason || "stock", nameOf(m.created_by), `${num(m.quantity_delta)} units`, null);
   for (const p of pos)
-    push(p.created_at, "PURCHASE", p.order_number, nameOf(p.created_by), p.status.toLowerCase(), num(p.subtotal));
+    push(p.created_at, "PURCHASE", p.order_number, nameOf(p.created_by), lower(p.status), num(p.subtotal));
   for (const i of invoices)
     push(i.created_at, "SUPPLIER_INVOICE", i.invoice_number, nameOf(i.recorded_by),
-      `${i.status.toLowerCase()}${i.due_date ? ` · due ${i.due_date}` : ""}`, num(i.amount));
+      `${lower(i.status)}${i.due_date ? ` · due ${i.due_date}` : ""}`, num(i.amount));
   for (const p of payments)
-    push(p.paid_at, "SUPPLIER_PAYMENT", p.method.toLowerCase(), nameOf(p.recorded_by), "", num(p.amount));
+    push(p.paid_at, "SUPPLIER_PAYMENT", lower(p.method), nameOf(p.recorded_by), "", num(p.amount));
   for (const e of expenses)
-    push(e.created_at, "EXPENSE", e.category, nameOf(e.recorded_by), `${e.status.toLowerCase()} · ${(e.description || "").slice(0, 60)}`, num(e.amount));
+    push(e.created_at, "EXPENSE", e.category, nameOf(e.recorded_by), `${lower(e.status)} · ${(e.description || "").slice(0, 60)}`, num(e.amount));
   for (const o of orders)
-    push(o.created_at, "WEB_ORDER", o.order_reference, o.customer_name, o.status.toLowerCase(), num(o.total));
+    push(o.created_at, "WEB_ORDER", o.order_reference, o.customer_name, lower(o.status), num(o.total));
   for (const b of bookings)
-    push(b.created_at, "BOOKING", b.booking_reference, b.customer_name, `${b.status.toLowerCase()} · ${b.motorcycle_make}`, null);
+    push(b.created_at, "BOOKING", b.booking_reference, b.customer_name, `${lower(b.status)} · ${b.motorcycle_make || "vehicle"}`, null);
   for (const im of imports)
     push(im.created_at, "IMPORT", im.primary_file || im.reference || "import", nameOf(im.created_by),
-      `${im.status.toLowerCase()}${im.approved_at ? ` by ${nameOf(im.approved_by)}` : ""}`, null);
+      `${lower(im.status)}${im.approved_at ? ` by ${nameOf(im.approved_by)}` : ""}`, null);
   for (const p of priced)
     push(p.price_confirmed_at, "PRICE_CONFIRM", p.name, nameOf(p.price_confirmed_by), "price published", null);
   for (const r of reports)

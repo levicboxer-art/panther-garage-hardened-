@@ -153,6 +153,16 @@ const tooltipStyle = {
   itemStyle: { color: "#c7f36b" },
 };
 
+async function readJsonResponse(response: Response): Promise<Record<string, any>> {
+  const body = await response.text();
+  if (!body.trim()) return {};
+  try {
+    return JSON.parse(body) as Record<string, any>;
+  } catch {
+    return {};
+  }
+}
+
 export default function BIWorkspace() {
   const [data, setData] = useState<BiData | null>(null);
   const [lifetime, setLifetime] = useState<LifetimeData | null>(null);
@@ -170,8 +180,8 @@ export default function BIWorkspace() {
         fetch(`/api/bi?days=${days}`, { cache: "no-store" }),
         fetch("/api/lifetime-analytics", { cache: "no-store" }),
       ]);
-      const json = await response.json();
-      const lifetimeJson = await lifetimeResponse.json();
+      const json = await readJsonResponse(response);
+      const lifetimeJson = await readJsonResponse(lifetimeResponse);
       if (!response.ok) throw new Error(json.error || "Could not load business insights.");
       setData(json as BiData);
       if (lifetimeResponse.ok) setLifetime(lifetimeJson as LifetimeData);
