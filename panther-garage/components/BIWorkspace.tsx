@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   IndianRupee,
@@ -170,11 +170,16 @@ export default function BIWorkspace() {
   const [days, setDays] = useState(90);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const lastRefreshAttempt = useRef(0);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    setLifetimeError("");
+  const load = useCallback(async (silent = false) => {
+    lastRefreshAttempt.current = Date.now();
+    if (!silent) {
+      setLoading(true);
+      setError("");
+      setLifetimeError("");
+    }
     try {
       const [response, lifetimeResult] = await Promise.all([
         fetch(`/api/bi?days=${days}`, { cache: "no-store" }),
@@ -186,23 +191,39 @@ export default function BIWorkspace() {
       const json = await readJsonResponse(response);
       if (!response.ok) throw new Error(json.error || "Could not load business insights.");
       setData(json as BiData);
+      setLastUpdated(new Date());
       const lifetimeResponse = lifetimeResult.response;
       if (lifetimeResponse?.ok) {
         setLifetime((await readJsonResponse(lifetimeResponse)) as LifetimeData);
+        setLifetimeError("");
       } else {
         const lifetimeJson = lifetimeResponse ? await readJsonResponse(lifetimeResponse) : {};
-        setLifetime(null);
-        setLifetimeError(lifetimeJson.error || "Lifetime analytics are temporarily unavailable.");
+        if (!silent) {
+          setLifetime(null);
+          setLifetimeError(lifetimeJson.error || "Lifetime analytics are temporarily unavailable.");
+        }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load business insights.");
+      if (!silent) setError(err instanceof Error ? err.message : "Could not load business insights.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [days]);
 
   useEffect(() => {
-    load();
+    void load();
+    const refreshIfVisible = () => {
+      if (document.visibilityState !== "visible" || Date.now() - lastRefreshAttempt.current < 5_000) return;
+      void load(true);
+    };
+    const interval = window.setInterval(refreshIfVisible, 30_000);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
   }, [load]);
 
   const kpis = useMemo(() => {
@@ -245,7 +266,7 @@ export default function BIWorkspace() {
     return (
       <div className="card border-red-300/30 p-5 text-sm text-red-200 flex items-center gap-3">
         <AlertTriangle size={17} /> {error}
-        <button onClick={load} className="pill ml-auto">
+        <button onClick={() => { void load(); }} className="pill ml-auto">
           <RefreshCw size={12} /> Retry
         </button>
       </div>
@@ -273,8 +294,8 @@ export default function BIWorkspace() {
           <h3 className="mt-1 text-xl font-bold">Every number below comes from your own records.</h3>
           <p className="mt-1 text-xs muted">
             Sales, margins, customer behaviour and demand forecasts are computed from live PostgreSQL
-            data (FIFO movements, invoices, repair jobs). Forecasts use least-squares regression with a
-            published confidence rating — evidence, not guesswork.
+            data (FIFO movements, invoices, repair jobs). Completed sales increase realized revenue;
+            receipts change stock opportunity, not booked sales revenue.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -288,7 +309,7 @@ export default function BIWorkspace() {
               {w === 365 ? "1 year" : `${w} days`}
             </button>
           ))}
-          <button onClick={load} className="btn btn-ghost text-xs" disabled={loading}>
+          <button onClick={() => { void load(); }} className="btn btn-ghost text-xs" disabled={loading}>
             {loading ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />} Recalculate
           </button>
         </div>
@@ -303,10 +324,13 @@ export default function BIWorkspace() {
               <div className="tag flex items-center gap-2"><Wallet size={14} /> LIFETIME EXECUTIVE PERFORMANCE</div>
               <h3 className="mt-1 text-xl font-bold">The full commercial picture</h3>
               <p className="mt-1 text-xs muted">
-                Realized from {lifetime.period_start ? new Date(lifetime.period_start).toLocaleDateString() : "the first recorded sale"} through today. Capital restored is the FIFO cost recovered through completed sales, shown separately from gross profit. Stock opportunity is recalculated from live FIFO batches.
+                Realized from {lifetime.period_start ? new Date(lifetime.period_start).toLocaleDateString() : "the first recorded sale"} through today. A sale increases realized revenue and reduces remaining stock; receiving stock increases the stock opportunity only. Capital restored is shown separately from gross profit.
               </p>
             </div>
-            <span className="badge">LIVE · FIFO COST BASIS</span>
+            <div className="flex flex-col items-end gap-1">
+              <span className="badge">AUTO-REFRESH · 30 SEC</span>
+              {lastUpdated && <span className="text-[11px] muted">Updated {lastUpdated.toLocaleTimeString()}</span>}
+            </div>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <div className="rounded-xl border border-white/[.08] bg-white/[.025] p-4"><div className="text-xs muted">Total sales revenue</div><div className="stat mt-2 text-2xl">{money(lifetime.realized.revenue)}</div><div className="mt-1 text-[11px] muted">{lifetime.realized.sales_count} completed invoices</div></div>
