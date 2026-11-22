@@ -69,6 +69,51 @@ type Props = {
   profile: { id: string; full_name: string; role: "BOSS" | "EMPLOYEE"; email: string };
   initialProducts: Product[];
 };
+type WorkspaceAlertCounts = {
+  invoices: number;
+  inventory: number;
+  reports: number;
+  purchases: number;
+  team_chat: number;
+};
+type WorkspaceNotificationToast = { tab: string; title: string; message: string };
+
+const NOTIFICATION_CATEGORIES_BY_TAB: Record<string, string> = {
+  Sales: "SALE",
+  "Recent invoices": "SALE",
+  Inventory: "LOW_STOCK,OUT_OF_STOCK",
+  Reports: "APPROVAL,EXPENSE",
+  Purchases: "PURCHASE",
+  "Team chat": "MESSAGE",
+};
+const WORKSPACE_ALERT_DETAILS: Record<keyof WorkspaceAlertCounts, { tab: string; title: string; unit: string }> = {
+  invoices: { tab: "Recent invoices", title: "New sale notification", unit: "sale notification" },
+  inventory: { tab: "Inventory", title: "New stock alert", unit: "stock alert" },
+  reports: { tab: "Reports", title: "New finance update", unit: "finance alert" },
+  purchases: { tab: "Purchases", title: "New purchasing update", unit: "purchase alert" },
+  team_chat: { tab: "Team chat", title: "New team message", unit: "message" },
+};
+const NAV_ALERT_KEY: Record<string, keyof WorkspaceAlertCounts> = {
+  Sales: "invoices",
+  "Recent invoices": "invoices",
+  Inventory: "inventory",
+  Reports: "reports",
+  Purchases: "purchases",
+  "Team chat": "team_chat",
+};
+const EMPTY_WORKSPACE_ALERTS: WorkspaceAlertCounts = {
+  invoices: 0, inventory: 0, reports: 0, purchases: 0, team_chat: 0,
+};
+
+function unreadForTab(tab: string, counts: WorkspaceAlertCounts) {
+  const key = NAV_ALERT_KEY[tab];
+  return key ? counts[key] : 0;
+}
+
+function NotificationBadge({ count, label }: { count: number; label: string }) {
+  if (count <= 0) return null;
+  return <span title={label} aria-label={label} className="absolute -right-2 -top-2 min-w-4 h-4 rounded-full bg-red-500 px-1 text-[9px] leading-4 font-bold text-white text-center">{count > 9 ? "9+" : count}</span>;
+}
 
 const nav = [
   ["Overview", LayoutDashboard],
@@ -104,19 +149,16 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantSelectedProduct, setAssistantSelectedProduct] = useState<{ id: string; sku: string; name: string } | null>(null);
   const clearAssistantSelection = useCallback(() => setAssistantSelectedProduct(null), []);
-  const navigateFromAssistant = useCallback((destination: string, product?: { id: string; sku: string; name: string; stock: number; active: boolean }) => {
-    setAssistantSelectedProduct(product ? { id: product.id, sku: product.sku, name: product.name } : null);
-    setTab(destination);
-    setAssistantOpen(false);
-  }, []);
   const [products, setProducts] = useState(initialProducts);
   const [modal, setModal] = useState<"employee" | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
   const [employeeName, setEmployeeName] = useState("");
   const [employeeEmail, setEmployeeEmail] = useState("");
   const [employeePassword, setEmployeePassword] = useState("");
-  const [unreadSaleAlerts, setUnreadSaleAlerts] = useState(0);
-  const saleAlertRequestId = useRef(0);
+  const [workspaceAlertCounts, setWorkspaceAlertCounts] = useState<WorkspaceAlertCounts>(EMPTY_WORKSPACE_ALERTS);
+  const [workspaceNotificationToast, setWorkspaceNotificationToast] = useState<WorkspaceNotificationToast | null>(null);
+  const previousWorkspaceAlerts = useRef<WorkspaceAlertCounts | null>(null);
+  const workspaceAlertRequestId = useRef(0);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
@@ -244,40 +286,81 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
     [profile.role],
   );
 
-  const refreshSaleAlerts = useCallback(async () => {
-    const requestId = ++saleAlertRequestId.current;
+  const refreshWorkspaceAlerts = useCallback(async () => {
+    const requestId = ++workspaceAlertRequestId.current;
     try {
-      const response = await fetch("/api/notifications?category=SALE&unread=true&count=true", { cache: "no-store" });
+      const response = await fetch("/api/notifications?summary=true", { cache: "no-store" });
       if (!response.ok) return;
       const data = await response.json();
-      if (requestId === saleAlertRequestId.current) setUnreadSaleAlerts(Number(data.unread) || 0);
+      const next: WorkspaceAlertCounts = {
+        invoices: Number(data.by_workspace?.invoices) || 0,
+        inventory: Number(data.by_workspace?.inventory) || 0,
+        reports: Number(data.by_workspace?.reports) || 0,
+        purchases: Number(data.by_workspace?.purchases) || 0,
+        team_chat: Number(data.by_workspace?.team_chat) || 0,
+      };
+      if (requestId !== workspaceAlertRequestId.current) return;
+      const previous = previousWorkspaceAlerts.current;
+      if (previous) {
+        const increased = (Object.keys(WORKSPACE_ALERT_DETAILS) as (keyof WorkspaceAlertCounts)[])
+          .map((key) => ({ key, delta: next[key] - previous[key], ...WORKSPACE_ALERT_DETAILS[key] }))
+          .filter((item) => item.delta > 0);
+        if (increased.length) {
+          setWorkspaceNotificationToast({
+            title: increased.length === 1 ? increased[0].title : "New garage updates",
+            message: increased.map((item) => `${item.delta} new ${item.unit}${item.delta === 1 ? "" : "s"}`).join(" · "),
+            tab: increased[0].tab,
+          });
+        }
+      }
+      previousWorkspaceAlerts.current = next;
+      setWorkspaceAlertCounts(next);
     } catch {
-      // Navigation remains available if notifications are briefly unavailable.
+      // Keep workspace navigation and its last known badges available offline.
     }
   }, []);
 
   useEffect(() => {
-    void refreshSaleAlerts();
-    const timer = window.setInterval(() => void refreshSaleAlerts(), 15000);
-    return () => window.clearInterval(timer);
-  }, [refreshSaleAlerts]);
+    void refreshWorkspaceAlerts();
+    const timer = window.setInterval(() => void refreshWorkspaceAlerts(), 15_000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshWorkspaceAlerts();
+    };
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshWorkspaceAlerts]);
+
+  useEffect(() => {
+    if (!workspaceNotificationToast) return;
+    const timer = window.setTimeout(() => setWorkspaceNotificationToast(null), 7_000);
+    return () => window.clearTimeout(timer);
+  }, [workspaceNotificationToast]);
 
   async function navigateTo(name: string) {
-    if (name !== "Recent invoices") {
-      setTab(name);
-      return;
-    }
+    setTab(name);
+    const category = NOTIFICATION_CATEGORIES_BY_TAB[name];
+    if (!category) return;
     try {
       const response = await fetch("/api/notifications", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mark_all_category: "SALE" }),
+        body: JSON.stringify({ mark_all_category: category }),
       });
-      if (response.ok) await refreshSaleAlerts();
+      if (response.ok) await refreshWorkspaceAlerts();
     } catch {
-      // Keep the badge visible so acknowledgement can be retried.
+      // Keep unread badges visible so acknowledgement can be retried.
     }
-    setTab(name);
+  }
+
+  function navigateFromAssistant(destination: string, product?: { id: string; sku: string; name: string; stock: number; active: boolean }) {
+    setAssistantSelectedProduct(product ? { id: product.id, sku: product.sku, name: product.name } : null);
+    void navigateTo(destination);
+    setAssistantOpen(false);
   }
 
   return (
@@ -336,7 +419,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
             >
               <span className="relative inline-flex">
                 <Icon size={17} />
-                {name === "Recent invoices" && unreadSaleAlerts > 0 && <span className="absolute -right-2 -top-2 min-w-4 h-4 rounded-full bg-red-500 px-1 text-[9px] leading-4 font-bold text-white text-center" aria-label={`${unreadSaleAlerts} new sale notification${unreadSaleAlerts === 1 ? "" : "s"}`}>{unreadSaleAlerts > 9 ? "9+" : unreadSaleAlerts}</span>}
+                <NotificationBadge count={unreadForTab(name, workspaceAlertCounts)} label={`${unreadForTab(name, workspaceAlertCounts)} new notification${unreadForTab(name, workspaceAlertCounts) === 1 ? "" : "s"} for ${name}`} />
               </span>
               {!sidebarCollapsed && name}
             </button>
@@ -377,7 +460,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
             >
               <span className="relative inline-flex">
                 <Icon size={16} />
-                {name === "Recent invoices" && unreadSaleAlerts > 0 && <span className="absolute -right-2 -top-2 min-w-4 h-4 rounded-full bg-red-500 px-1 text-[9px] leading-4 font-bold text-white text-center" aria-label={`${unreadSaleAlerts} new sale notification${unreadSaleAlerts === 1 ? "" : "s"}`}>{unreadSaleAlerts > 9 ? "9+" : unreadSaleAlerts}</span>}
+                <NotificationBadge count={unreadForTab(name, workspaceAlertCounts)} label={`${unreadForTab(name, workspaceAlertCounts)} new notification${unreadForTab(name, workspaceAlertCounts) === 1 ? "" : "s"} for ${name}`} />
               </span>
               {name}
             </button>
@@ -480,7 +563,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
               role={profile.role}
               theme={profile.role === "BOSS" ? theme : "dark"}
               products={products}
-              unreadSaleAlerts={unreadSaleAlerts}
+              unreadSaleAlerts={workspaceAlertCounts.invoices}
               onNavigate={(name) => void navigateTo(name)}
               onRefreshProducts={refresh}
             />
@@ -690,6 +773,21 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
       )}
 
       {toast && <div className="toast">{toast}</div>}
+      {workspaceNotificationToast && (
+        <div role="status" aria-live="polite" className="fixed right-4 top-[88px] z-[60] w-[min(360px,calc(100vw-2rem))] card border-lime/30 bg-[#101010] p-4 shadow-2xl">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="tag">NEW UPDATE</div>
+              <p className="mt-1 text-sm font-semibold">{workspaceNotificationToast.title}</p>
+              <p className="mt-1 text-xs muted">{workspaceNotificationToast.message}</p>
+            </div>
+            <button type="button" onClick={() => setWorkspaceNotificationToast(null)} aria-label="Dismiss new update"><X size={15} /></button>
+          </div>
+          <button type="button" className="mt-3 text-xs lime hover:underline" onClick={() => { const target = workspaceNotificationToast.tab; setWorkspaceNotificationToast(null); void navigateTo(target); }}>
+            Open {workspaceNotificationToast.tab}
+          </button>
+        </div>
+      )}
 
       {/* Header-triggered garage assistant: instant platform search + AI answers grounded in live data. */}
       <AssistantPanel

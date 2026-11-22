@@ -4,6 +4,16 @@ import { dbErrorResponse, invalidBodyResponse, isSameOriginRequest, rateLimit, r
 
 const NO_STORE = { "Cache-Control": "private, no-store, max-age=0", "X-Content-Type-Options": "nosniff" };
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const WORKSPACE_CATEGORIES = {
+  invoices: ["SALE"],
+  inventory: ["LOW_STOCK", "OUT_OF_STOCK"],
+  reports: ["APPROVAL", "EXPENSE"],
+  purchases: ["PURCHASE"],
+  team_chat: ["MESSAGE"],
+} as const;
+const ALLOWED_NOTIFICATION_CATEGORIES = new Set([
+  "SALE", "LOW_STOCK", "OUT_OF_STOCK", "APPROVAL", "EXPENSE", "PURCHASE", "MESSAGE",
+]);
 
 async function activeStaff() {
   const supabase = await createClient();
@@ -25,6 +35,23 @@ export async function GET(request: Request) {
   const saleOnly = category === "SALE";
   const unreadOnly = params.get("unread") === "true";
   const countOnly = params.get("count") === "true";
+  const summaryOnly = params.get("summary") === "true";
+  if (summaryOnly) {
+    if (category || unreadOnly || countOnly) {
+      return NextResponse.json({ error: "Workspace summary cannot be combined with other notification filters." }, { status: 400, headers: NO_STORE });
+    }
+    const results = await Promise.all(Object.entries(WORKSPACE_CATEGORIES).map(async ([workspace, categories]) => {
+      const { count, error } = await supabase.from("notifications")
+        .select("id", { count: "exact", head: true })
+        .eq("recipient_id", userId)
+        .is("read_at", null)
+        .in("category", [...categories]);
+      return { workspace, count: count || 0, error };
+    }));
+    if (results.some((result) => result.error)) return dbErrorResponse(503);
+    const by_workspace = Object.fromEntries(results.map(({ workspace, count }) => [workspace, count]));
+    return NextResponse.json({ by_workspace }, { headers: NO_STORE });
+  }
   if (category && !saleOnly) return NextResponse.json({ error: "Unsupported category filter." }, { status: 400, headers: NO_STORE });
   if (countOnly) {
     let query = supabase.from("notifications").select("id", { count: "exact", head: true }).eq("recipient_id", userId);
@@ -61,17 +88,25 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Invalid request body." }, { status: 400, headers: NO_STORE });
   }
   const input = body as Record<string, unknown>;
-  const hasValidId = typeof input.id === "string" && UUID_PATTERN.test(input.id);
-  const markAll = input.mark_all === true && input.id === undefined && input.mark_all_category === undefined;
-  const markSale = input.mark_all_category === "SALE" && input.id === undefined && input.mark_all === undefined;
+  const hasIdAction = input.id !== undefined;
+  const hasMarkAllAction = input.mark_all !== undefined;
+  const hasCategoryAction = input.mark_all_category !== undefined;
+  const hasValidId = hasIdAction && typeof input.id === "string" && UUID_PATTERN.test(input.id);
+  const markAll = hasMarkAllAction && input.mark_all === true;
+  const requestedCategories = typeof input.mark_all_category === "string"
+    ? Array.from(new Set(input.mark_all_category.split(",").map((category) => category.trim()).filter(Boolean)))
+    : [];
+  const markCategories = hasCategoryAction && typeof input.mark_all_category === "string" &&
+    requestedCategories.length > 0 && requestedCategories.every((category) => ALLOWED_NOTIFICATION_CATEGORIES.has(category));
   const validKeys = Object.keys(input).every((key) => ["id", "mark_all", "mark_all_category"].includes(key));
-  if (!validKeys || (!hasValidId && !markAll && !markSale)) {
-    return NextResponse.json({ error: "Provide a valid notification id, mark_all=true, or mark_all_category=SALE." }, { status: 400, headers: NO_STORE });
+  const actionCount = [hasIdAction, hasMarkAllAction, hasCategoryAction].filter(Boolean).length;
+  if (!validKeys || actionCount !== 1 || (!hasValidId && !markAll && !markCategories)) {
+    return NextResponse.json({ error: "Provide exactly one valid notification id, mark_all=true, or a supported mark_all_category list." }, { status: 400, headers: NO_STORE });
   }
   let query = supabase.from("notifications").update({ read_at: new Date().toISOString() })
     .eq("recipient_id", userId).is("read_at", null);
   if (hasValidId) query = query.eq("id", input.id as string);
-  else if (markSale) query = query.eq("category", "SALE");
+  else if (markCategories) query = query.in("category", requestedCategories);
   const { error } = await query;
   if (error) return dbErrorResponse(503);
   return NextResponse.json({ message: "Notification updated." }, { headers: NO_STORE });
