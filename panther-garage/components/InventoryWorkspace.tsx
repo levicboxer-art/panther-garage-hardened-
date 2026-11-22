@@ -114,9 +114,13 @@ function publicImagePath(url: string | null | undefined) {
 export default function InventoryWorkspace({
   role,
   onChanged,
+  initialSearch,
+  onAssistantSearchHandled,
 }: {
   role: Role;
   onChanged?: () => void;
+  initialSearch?: string;
+  onAssistantSearchHandled?: () => void;
 }) {
   const supabase = createClient();
   const [rows, setRows] = useState<InventoryRow[]>([]);
@@ -166,6 +170,12 @@ export default function InventoryWorkspace({
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (!initialSearch) return;
+    setQuery(initialSearch);
+    onAssistantSearchHandled?.();
+  }, [initialSearch, onAssistantSearchHandled]);
 
   useEffect(() => {
     if (!notice) return;

@@ -102,6 +102,13 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
   const [theme, setTheme] = useState<DashboardTheme>("dark");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantSelectedProduct, setAssistantSelectedProduct] = useState<{ id: string; sku: string; name: string } | null>(null);
+  const clearAssistantSelection = useCallback(() => setAssistantSelectedProduct(null), []);
+  const navigateFromAssistant = useCallback((destination: string, product?: { id: string; sku: string; name: string; stock: number; active: boolean }) => {
+    setAssistantSelectedProduct(product ? { id: product.id, sku: product.sku, name: product.name } : null);
+    setTab(destination);
+    setAssistantOpen(false);
+  }, []);
   const [products, setProducts] = useState(initialProducts);
   const [modal, setModal] = useState<"employee" | null>(null);
   const [employees, setEmployees] = useState<any[]>([]);
@@ -480,7 +487,12 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           ) : null}
 
           {tab === "Inventory" ? (
-            <InventoryWorkspace role={profile.role} onChanged={refresh} />
+            <InventoryWorkspace
+              role={profile.role}
+              onChanged={refresh}
+              initialSearch={assistantSelectedProduct?.sku || assistantSelectedProduct?.name}
+              onAssistantSearchHandled={clearAssistantSelection}
+            />
           ) : null}
 
           {tab === "Catalogue review" && profile.role === "BOSS" ? (
@@ -546,7 +558,13 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           )}
 
           {tab === "Sales" || tab === "Customers" ? (
-            <SalesWorkspace mode={tab} products={products} onProductsChanged={refresh} />
+            <SalesWorkspace
+              mode={tab}
+              products={products}
+              onProductsChanged={refresh}
+              initialProductId={assistantSelectedProduct?.id}
+              onAssistantProductHandled={clearAssistantSelection}
+            />
           ) : null}
           {tab === "Recent invoices" ? <RecentInvoicesWorkspace role={profile.role} /> : null}
           {tab === "Bookings" ? <BookingsWorkspace /> : null}
@@ -677,9 +695,8 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
       <AssistantPanel
         open={assistantOpen}
         onClose={() => setAssistantOpen(false)}
-        role={profile.role}
         products={products as any}
-        onNavigate={setTab}
+        onNavigate={navigateFromAssistant}
       />
     </main>
   );

@@ -11,10 +11,14 @@ export default function SalesWorkspace({
   mode,
   products,
   onProductsChanged,
+  initialProductId,
+  onAssistantProductHandled,
 }: {
   mode: "Sales" | "Customers";
   products: Product[];
   onProductsChanged?: () => Promise<Product[] | void> | Product[] | void;
+  initialProductId?: string;
+  onAssistantProductHandled?: () => void;
 }) {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,6 +50,19 @@ export default function SalesWorkspace({
   }
 
   useEffect(() => { void load(); }, []);
+
+  useEffect(() => {
+    if (!initialProductId) return;
+    const product = products.find((item) => item.id === initialProductId && item.active && item.stock > 0);
+    if (product) {
+      setProductSearch("");
+      setProductId(product.id);
+      setError("");
+    } else {
+      setError("This product is no longer available to sell. Refresh the product list and try again.");
+    }
+    onAssistantProductHandled?.();
+  }, [initialProductId, onAssistantProductHandled, products]);
 
   const cartRows = cart.map(item => ({ ...item, product: products.find(product => product.id === item.product_id) })).filter(item => item.product);
   const subtotal = cartRows.reduce((sum, item) => sum + item.product!.selling_price * item.quantity, 0);
