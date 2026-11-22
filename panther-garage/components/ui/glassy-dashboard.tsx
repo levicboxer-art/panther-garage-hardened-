@@ -50,6 +50,9 @@ type ReportSummary = {
     revenue: number;
     collected: number;
     customer_balance: number;
+    approved_expenses: number;
+    pending_expenses: number;
+    supplier_invoice_outstanding: number;
   } | null;
 };
 
@@ -163,6 +166,11 @@ export default function GlassyDashboard({
         .sort((a, b) => a.stock - b.stock || a.name.localeCompare(b.name)),
     [products],
   );
+  const finance = report?.finance;
+  const collectedPercent = finance && finance.revenue > 0
+    ? Math.round((finance.collected / finance.revenue) * 100)
+    : 0;
+  const collectionProgress = Math.min(100, Math.max(0, collectedPercent));
 
   const metrics: Metric[] = useMemo(() => {
     const unavailable = loading && !report;
@@ -331,6 +339,65 @@ export default function GlassyDashboard({
           </article>
         ))}
       </section>
+
+      {role === "BOSS" && (
+        <section className={`${styles.panel} ${styles.ownerFinance}`} data-reveal aria-labelledby="owner-finance-title" aria-busy={loading}>
+          <div className={styles.panelHeading}>
+            <div>
+              <p className={styles.panelEyebrow}>OWNER FINANCIAL SNAPSHOT</p>
+              <h3 id="owner-finance-title">Collections &amp; commitments</h3>
+              <p className={styles.panelDescription}>
+                Recorded sales, customer balances, supplier invoices, and expenses · {periodLabel}.
+              </p>
+            </div>
+            <button type="button" className={styles.textAction} onClick={() => onNavigate("Reports")}>
+              Open reports <ArrowRight size={14} />
+            </button>
+          </div>
+
+          <div className={styles.financeGrid}>
+            <article className={styles.financeCard}>
+              <span className={styles.financeLabel}>Sales revenue</span>
+              <strong className={styles.financeValue}>{loading && !report ? "…" : finance ? money(finance.revenue) : "—"}</strong>
+              <div className={styles.financeMeta}>
+                <span>Collected</span>
+                <b>{loading && !report ? "…" : finance ? money(finance.collected) : "—"}</b>
+              </div>
+              <div className={styles.collectionTrack} role="progressbar" aria-label="Collected as a share of sales revenue" aria-valuemin={0} aria-valuemax={100} aria-valuenow={collectionProgress}>
+                <span style={{ width: `${collectionProgress}%` }} />
+              </div>
+              <span className={styles.financeDetail}>
+                {finance?.revenue ? `${collectedPercent}% of recorded revenue collected` : "No completed sales recorded in this period"}
+              </span>
+            </article>
+
+            <article className={styles.financeCard}>
+              <span className={styles.financeLabel}>Customer receivables</span>
+              <strong className={styles.financeValue}>{loading && !report ? "…" : finance ? money(finance.customer_balance) : "—"}</strong>
+              <span className={styles.financeDetail}>Balance due on completed sales recorded in this period.</span>
+            </article>
+
+            <article className={styles.financeCard}>
+              <span className={styles.financeLabel}>Supplier invoice outstanding</span>
+              <strong className={styles.financeValue}>{loading && !report ? "…" : finance ? money(finance.supplier_invoice_outstanding) : "—"}</strong>
+              <span className={styles.financeDetail}>Unpaid amounts on supplier invoices recorded in this period.</span>
+            </article>
+
+            <article className={styles.financeCard}>
+              <span className={styles.financeLabel}>Expense control</span>
+              <div className={styles.financeMeta}>
+                <span>Pending approval</span>
+                <b>{loading && !report ? "…" : finance ? money(finance.pending_expenses) : "—"}</b>
+              </div>
+              <div className={styles.financeMeta}>
+                <span>Approved</span>
+                <b>{loading && !report ? "…" : finance ? money(finance.approved_expenses) : "—"}</b>
+              </div>
+              <span className={styles.financeDetail}>Expense records dated in this period.</span>
+            </article>
+          </div>
+        </section>
+      )}
 
       <div className={styles.contentGrid}>
         <section className={styles.panel} data-reveal aria-labelledby="stock-attention-title">

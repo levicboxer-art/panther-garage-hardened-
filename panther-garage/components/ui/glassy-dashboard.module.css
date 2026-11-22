@@ -454,6 +454,29 @@
 .repairsKey { background: var(--gd-blue); }
 .activityEmpty { display: grid; min-height: 100px; place-items: center; color: var(--gd-muted); font-size: 11px; }
 
+.ownerFinance { margin-top: 13px; }
+.financeGrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.financeCard { display: flex; min-width: 0; flex-direction: column; gap: 8px; border: 1px solid var(--gd-line); border-radius: 15px; padding: 13px; background: var(--gd-raise); }
+.financeLabel { color: var(--gd-muted); font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.financeValue { display: block; overflow-wrap: anywhere; color: var(--gd-ink); font-size: clamp(18px, 2vw, 25px); font-weight: 820; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+.financeMeta { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--gd-muted); font-size: 9px; }
+.financeMeta b { color: var(--gd-ink); font-size: 10px; font-variant-numeric: tabular-nums; text-align: right; }
+.financeDetail { color: var(--gd-muted); font-size: 9px; line-height: 1.45; }
+.collectionTrack { height: 5px; overflow: hidden; border-radius: 999px; background: var(--gd-line); }
+.collectionTrack span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--gd-lime), var(--gd-blue)); transition: width .25s ease; }
+
+@media (max-width: 1050px) {
+  .financeGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .ownerFinance { padding: 16px; }
+}
+
+@media (max-width: 450px) {
+  .financeGrid { grid-template-columns: minmax(0, 1fr); }
+}
+
 @media (max-width: 450px) {
   .activityPanel { padding: 15px 12px; }
   .activityHeading { flex-direction: column; }
