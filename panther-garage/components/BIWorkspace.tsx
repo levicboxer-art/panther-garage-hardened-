@@ -120,8 +120,8 @@ type BiData = {
 type LifetimeData = {
   period_start: string | null;
   period_end: string;
-  realized: { sales_count: number; units_sold: number; revenue: number; collected: number; gross_profit: number; gross_margin_pct: number | null };
-  inventory_projection: { units_remaining: number; revenue_if_all_sold: number; cost_of_remaining_stock: number; gross_profit_if_all_sold: number; total_revenue_if_all_sold: number; total_gross_profit_if_all_sold: number };
+  realized: { sales_count: number; units_sold: number; revenue: number; collected: number; capital_restored: number; gross_profit: number; gross_margin_pct: number | null };
+  inventory_projection: { units_remaining: number; revenue_if_all_sold: number; cost_of_remaining_stock: number; gross_profit_if_all_sold: number; total_revenue_if_all_sold: number; total_gross_profit_if_all_sold: number; calculated_at?: string };
   trend: { date: string; revenue: number; gross_profit: number; cumulative_revenue: number; cumulative_gross_profit: number }[];
 };
 
@@ -303,15 +303,16 @@ export default function BIWorkspace() {
               <div className="tag flex items-center gap-2"><Wallet size={14} /> LIFETIME EXECUTIVE PERFORMANCE</div>
               <h3 className="mt-1 text-xl font-bold">The full commercial picture</h3>
               <p className="mt-1 text-xs muted">
-                Realized from {lifetime.period_start ? new Date(lifetime.period_start).toLocaleDateString() : "the first recorded sale"} through today, plus the value of current active stock at its configured selling prices.
+                Realized from {lifetime.period_start ? new Date(lifetime.period_start).toLocaleDateString() : "the first recorded sale"} through today. Capital restored is the FIFO cost recovered through completed sales, shown separately from gross profit. Stock opportunity is recalculated from live FIFO batches.
               </p>
             </div>
             <span className="badge">LIVE · FIFO COST BASIS</span>
           </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <div className="rounded-xl border border-white/[.08] bg-white/[.025] p-4"><div className="text-xs muted">Total sales revenue</div><div className="stat mt-2 text-2xl">{money(lifetime.realized.revenue)}</div><div className="mt-1 text-[11px] muted">{lifetime.realized.sales_count} completed invoices</div></div>
+            <div className="rounded-xl border border-sky-300/25 bg-sky-300/5 p-4"><div className="text-xs muted">Capital restored</div><div className="stat mt-2 text-2xl text-sky-200">{money(lifetime.realized.capital_restored)}</div><div className="mt-1 text-[11px] muted">FIFO cost recovered through sales</div></div>
             <div className="rounded-xl border border-lime/25 bg-lime/5 p-4"><div className="text-xs muted">Realized gross profit</div><div className="stat mt-2 text-2xl lime">{money(lifetime.realized.gross_profit)}</div><div className="mt-1 text-[11px] muted">{lifetime.realized.gross_margin_pct == null ? "Margin unavailable" : `${lifetime.realized.gross_margin_pct}% lifetime margin`}</div></div>
-            <div className="rounded-xl border border-sky-300/20 bg-sky-300/5 p-4"><div className="text-xs muted">Revenue if stock sells</div><div className="stat mt-2 text-2xl">{money(lifetime.inventory_projection.total_revenue_if_all_sold)}</div><div className="mt-1 text-[11px] muted">Includes {lifetime.inventory_projection.units_remaining.toLocaleString()} units remaining</div></div>
+            <div className="rounded-xl border border-sky-300/20 bg-sky-300/5 p-4"><div className="text-xs muted">Total revenue if all stock sells</div><div className="stat mt-2 text-2xl">{money(lifetime.inventory_projection.total_revenue_if_all_sold)}</div><div className="mt-1 text-[11px] muted">Live projection · {lifetime.inventory_projection.units_remaining.toLocaleString()} units remaining</div></div>
             <div className="rounded-xl border border-amber-300/25 bg-amber-300/5 p-4"><div className="text-xs muted">Gross profit if stock sells</div><div className="stat mt-2 text-2xl text-amber-200">{money(lifetime.inventory_projection.total_gross_profit_if_all_sold)}</div><div className="mt-1 text-[11px] muted">Realized profit plus remaining-stock upside</div></div>
           </div>
           <div className="mt-4 grid gap-4 xl:grid-cols-[1.5fr_1fr]">
@@ -333,8 +334,9 @@ export default function BIWorkspace() {
             </div>
             <div className="rounded-xl border border-white/[.08] p-4">
               <h4 className="font-semibold">Remaining-stock opportunity</h4>
-              <p className="mt-1 text-[11px] muted">What current active inventory contributes if sold at configured prices.</p>
-              <div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="muted">Stock revenue</span><b>{money(lifetime.inventory_projection.revenue_if_all_sold)}</b></div><div className="flex justify-between gap-3"><span className="muted">Stock cost (FIFO)</span><b>{money(lifetime.inventory_projection.cost_of_remaining_stock)}</b></div><div className="flex justify-between gap-3 border-t border-line pt-3"><span className="font-semibold">Future gross profit</span><b className="lime">{money(lifetime.inventory_projection.gross_profit_if_all_sold)}</b></div><div className="flex justify-between gap-3"><span className="muted">Units still available</span><b>{lifetime.inventory_projection.units_remaining.toLocaleString()}</b></div></div>
+              <p className="mt-1 text-[11px] muted">What the current active inventory contributes if sold at configured prices. Sales reduce this automatically; new receipts increase it.</p>
+              <div className="mt-4 space-y-3 text-sm"><div className="flex justify-between gap-3"><span className="muted">Remaining-stock revenue</span><b>{money(lifetime.inventory_projection.revenue_if_all_sold)}</b></div><div className="flex justify-between gap-3"><span className="muted">Stock cost (FIFO)</span><b>{money(lifetime.inventory_projection.cost_of_remaining_stock)}</b></div><div className="flex justify-between gap-3 border-t border-line pt-3"><span className="font-semibold">Future gross profit</span><b className="lime">{money(lifetime.inventory_projection.gross_profit_if_all_sold)}</b></div><div className="flex justify-between gap-3"><span className="muted">Units still available</span><b>{lifetime.inventory_projection.units_remaining.toLocaleString()}</b></div></div>
+              <div className="mt-4 text-[10px] muted">Live batch calculation: {lifetime.inventory_projection.calculated_at ? new Date(lifetime.inventory_projection.calculated_at).toLocaleString() : "current request"}</div>
             </div>
           </div>
         </div>
