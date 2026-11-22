@@ -222,8 +222,8 @@ export default function SalesWorkspace({
           {servicePerformed && <div className="grid gap-3 rounded-xl border border-lime/20 bg-lime/[.03] p-4 sm:grid-cols-2">
             <label className="block text-xs muted">Repair / maintenance fee (RWF)<input className="field mt-1" type="number" min="0" step="1" value={serviceFee} onChange={(event) => setServiceFee(event.target.value)}/></label>
             <label className="block text-xs muted">Mechanic name<input className="field mt-1" required maxLength={120} value={mechanicName} onChange={(event) => setMechanicName(event.target.value)} placeholder="Who performed the work?"/></label>
-            <label className="block text-xs muted">Motorcycle plate / registration<input className="field mt-1" required maxLength={40} value={registrationNumber} onChange={(event) => setRegistrationNumber(event.target.value)} placeholder="e.g. RA…"/></label>
-            <label className="block text-xs muted">Service note (optional)<input className="field mt-1" maxLength={500} value={serviceNotes} onChange={(event) => setServiceNotes(event.target.value)} placeholder="Brief work performed"/></label>
+            <label className="block text-xs muted">Motorcycle plate / registration<input className="field mt-1" required maxLength={32} value={registrationNumber} onChange={(event) => setRegistrationNumber(event.target.value)} placeholder="e.g. RA…"/></label>
+            <label className="block text-xs muted">Service note (optional)<input className="field mt-1" maxLength={240} value={serviceNotes} onChange={(event) => setServiceNotes(event.target.value)} placeholder="Brief work performed"/></label>
           </div>}
           <div className="flex justify-between border-t border-line pt-3"><span className="font-bold">Total due</span><strong className="lime text-xl">{money(total)}</strong></div>
         </div>

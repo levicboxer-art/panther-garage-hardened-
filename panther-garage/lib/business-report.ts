@@ -57,10 +57,10 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
 
   const [salesRes, trendSalesRes, previousSalesRes, saleItemsRes, repairsRes, repairPartsRes, expensesRes, previousExpensesRes,
     productsRes, batchesRes, movementsRes, purchaseOrdersRes, invoicesRes, customersRes, previousCustomersRes] = await Promise.all([
-    supabase.from("sales").select("id,invoice_number,customer_id,payment_method,subtotal,discount,total,amount_paid,balance_due,status,created_at,sold_by,service_performed,service_fee,mechanic_name,registration_number,service_notes,seller:profiles!sales_sold_by_fkey(full_name)").gte("created_at", after).lt("created_at", before).order("created_at", { ascending: false }).limit(10000),
+    supabase.from("sales").select("id,invoice_number,customer_id,payment_method,subtotal,discount,total,amount_paid,balance_due,status,created_at,sold_by,service_performed,service_fee,mechanic_name,registration_number:motorcycle_plate,service_notes:service_description,seller:profiles!sales_sold_by_fkey(full_name)").gte("created_at", after).lt("created_at", before).order("created_at", { ascending: false }).limit(10000),
     supabase.from("sales").select("total,amount_paid,status,created_at").gte("created_at", dayStart(trendFrom)).lt("created_at", before).limit(20000),
     supabase.from("sales").select("id,total,created_at,status").eq("status", "COMPLETED").gte("created_at", previousAfter).lt("created_at", previousBefore).limit(10000),
-    supabase.from("sale_items").select("id,sale_id,product_id,product_name,sku,quantity,unit_price,unit_cost,line_total,item_type,sales!inner(created_at,status)").eq("sales.status", "COMPLETED").gte("sales.created_at", after).lt("sales.created_at", before).limit(20000),
+    supabase.from("sale_items").select("id,sale_id,product_id,product_name,sku,quantity,unit_price,unit_cost,line_total,item_type,cost_known,sales!inner(created_at,status)").eq("sales.status", "COMPLETED").gte("sales.created_at", after).lt("sales.created_at", before).limit(20000),
     supabase.from("repair_jobs").select("id,job_number,customer_id,motorcycle_make,motorcycle_model,reported_issue,status,labour_fee,parts_total,total_cost,received_at,completed_at,collected_at").gte("received_at", after).lt("received_at", before).limit(10000),
     supabase.from("repair_parts").select("id,repair_job_id,product_id,product_name,sku,quantity,unit_price,unit_cost,line_total,repair_jobs!inner(received_at,status)").gte("repair_jobs.received_at", after).lt("repair_jobs.received_at", before).limit(20000),
     supabase.from("garage_expenses").select("id,category,description,amount,expense_date,payment_method,reference,status,created_at").gte("expense_date", window.from).lte("expense_date", window.to).limit(10000),
@@ -136,7 +136,7 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
   const operatingExpenses = round(approvedExpenses.reduce((sum, row) => sum + n(row.amount), 0));
   const netOperatingResult = round(grossProfit + repairLabourRevenue - operatingExpenses);
   const completedRepairParts = repairParts.filter((row) => ["READY", "COLLECTED"].includes(row.repair_jobs?.status || ""));
-  const hasCompleteCostData = [...saleItems, ...completedRepairParts].every((row) => row.unit_cost !== null && row.unit_cost !== undefined);
+  const hasCompleteCostData = [...saleItems, ...completedRepairParts].every((row) => row.cost_known !== false && row.unit_cost !== null && row.unit_cost !== undefined);
   const previousRevenue = round(previousSales.reduce((sum, row) => sum + n(row.total), 0));
   const previousExpenseTotal = round(previousExpenses.filter((row) => row.status === "APPROVED").reduce((sum, row) => sum + n(row.amount), 0));
   const trendByMonth = new Map<string, { revenue: number; collected: number }>();
@@ -173,8 +173,8 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
   const salesByProduct = new Map<string, Row>();
   for (const item of saleItems) {
     const productKey = item.product_id || `used:${item.product_name}:${item.sku}`;
-    const costKnown = item.unit_cost !== null && item.unit_cost !== undefined;
-    const entry = salesByProduct.get(productKey) || { product_id: item.product_id || null, item_type: item.item_type || "STOCK", product_name: item.product_name, sku: item.sku, units: 0, revenue: 0, cost: 0, cost_known: true };
+    const costKnown = item.cost_known !== false && item.unit_cost !== null && item.unit_cost !== undefined;
+    const entry = salesByProduct.get(productKey) || { product_id: item.product_id || null, item_type: item.item_type === "USED" || item.item_type === "USED_NONSTOCK" ? "USED_NONSTOCK" : "STOCK", product_name: item.product_name, sku: item.sku, units: 0, revenue: 0, cost: 0, cost_known: true };
     entry.units += n(item.quantity); entry.revenue += allocatedLineRevenue(item);
     if (costKnown) entry.cost += n(item.unit_cost) * n(item.quantity); else entry.cost_known = false;
     salesByProduct.set(productKey, entry);
@@ -195,7 +195,7 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
       date: sale?.created_at || item.sales?.created_at || null,
       invoice: sale?.invoice_number || "",
       employee: sale?.seller?.full_name || "Staff member",
-      item_type: item.item_type || "STOCK",
+      item_type: item.item_type === "USED" || item.item_type === "USED_NONSTOCK" ? "USED_NONSTOCK" : "STOCK",
       item: item.product_name,
       sku: item.sku,
       quantity: n(item.quantity),
@@ -203,7 +203,7 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
       line_total: n(item.line_total),
       discount_allocated: round(n(item.line_total) - allocatedLineRevenue(item)),
       net_line_total: round(allocatedLineRevenue(item)),
-      unit_cost: item.unit_cost === null || item.unit_cost === undefined ? null : n(item.unit_cost),
+      unit_cost: item.cost_known === false || item.unit_cost === null || item.unit_cost === undefined ? null : n(item.unit_cost),
     };
   });
   const customersInPeriod = customers.filter((row) => inWindow(row, "created_at", window.from, window.to));

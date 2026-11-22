@@ -18,11 +18,11 @@ export async function GET() {
   if (s.response) return s.response;
   const isBoss = s.role === "BOSS";
   const itemFields = isBoss
-    ? "product_id,product_name,sku,quantity,unit_price,unit_cost,line_total,item_type"
+    ? "product_id,product_name,sku,quantity,unit_price,unit_cost,line_total,item_type,cost_known"
     : "product_id,product_name,sku,quantity,unit_price,line_total,item_type";
   const sellerField = isBoss ? ",seller:profiles!sales_sold_by_fkey(full_name)" : "";
   const [salesResult, stockResult] = await Promise.all([
-    s.supabase.from("sales").select(`id,invoice_number,status,payment_method,subtotal,discount,total,amount_paid,balance_due,created_at,service_performed,service_fee,mechanic_name,registration_number,service_notes${sellerField},customers(full_name,phone),sale_items(${itemFields})`).eq("status", "COMPLETED").order("created_at", { ascending: false }).limit(100),
+    s.supabase.from("sales").select(`id,invoice_number,status,payment_method,subtotal,discount,total,amount_paid,balance_due,created_at,service_performed,service_fee,mechanic_name,motorcycle_plate,service_description${sellerField},customers(full_name,phone),sale_items(${itemFields})`).eq("status", "COMPLETED").order("created_at", { ascending: false }).limit(100),
     staffInventorySummary(s.supabase).catch((error) => {
       console.error("Could not load current stock for invoice details", error);
       return [];
@@ -37,13 +37,15 @@ export async function GET() {
     const discount = Number(sale.discount) || 0;
     return {
       ...sale,
+      registration_number: sale.motorcycle_plate || null,
+      service_notes: sale.service_description || null,
       sale_items: lineItems.map((item: any) => {
         const quantity = Number(item.quantity) || 0;
         const lineTotal = Number(item.line_total) || 0;
         const allocatedDiscount = subtotal > 0 ? Math.round((discount * lineTotal / subtotal) * 100) / 100 : 0;
         const result = {
           ...item,
-          item_type: item.item_type || "STOCK",
+          item_type: item.item_type === "USED" || item.item_type === "USED_NONSTOCK" ? "USED_NONSTOCK" : "STOCK",
           quantity,
           unit_price: Number(item.unit_price) || 0,
           line_total: lineTotal,
@@ -51,7 +53,7 @@ export async function GET() {
           effective_unit_price: quantity > 0 ? (lineTotal - allocatedDiscount) / quantity : 0,
         } as Record<string, unknown>;
         if (isBoss) {
-          const costIsKnown = item.unit_cost !== null && item.unit_cost !== undefined;
+          const costIsKnown = item.cost_known !== false && item.unit_cost !== null && item.unit_cost !== undefined;
           result.unit_cost = costIsKnown ? Number(item.unit_cost) : null;
           result.gross_profit = costIsKnown
             ? Math.round((lineTotal - allocatedDiscount - Number(item.unit_cost) * quantity) * 100) / 100
@@ -81,7 +83,7 @@ export async function POST(req: Request) {
       const productId = String(item.product_id || "").trim();
       const unitPrice = item.unit_price === undefined ? undefined : Number(item.unit_price);
       if (!productId || (unitPrice !== undefined && (!Number.isFinite(unitPrice) || unitPrice <= 0 || unitPrice > 100000000))) return null;
-      return { item_type: itemType, product_id: productId, quantity, ...(unitPrice === undefined ? {} : { unit_price: unitPrice }) };
+      return { item_type: "INVENTORY", product_id: productId, quantity, ...(unitPrice === undefined ? {} : { unit_price: unitPrice }) };
     }
     if (itemType === "USED_NONSTOCK") {
       const description = String(item.description || "").trim();
@@ -89,7 +91,7 @@ export async function POST(req: Request) {
       const unitCost = item.unit_cost === null || item.unit_cost === undefined || item.unit_cost === "" ? null : Number(item.unit_cost);
       if (description.length < 2 || description.length > 200 || !Number.isFinite(unitPrice) || unitPrice <= 0 || unitPrice > 100000000) return null;
       if (unitCost !== null && (!Number.isFinite(unitCost) || unitCost < 0 || unitCost > 100000000)) return null;
-      return { item_type: itemType, description, quantity, unit_price: unitPrice, unit_cost: unitCost };
+      return { item_type: "USED", product_name: description, quantity, unit_price: unitPrice, unit_cost: unitCost };
     }
     return null;
   });
@@ -113,7 +115,7 @@ export async function POST(req: Request) {
   const registrationNumber = servicePerformed ? String(submittedService.registration_number || "").trim() : "";
   const serviceNotes = servicePerformed ? String(submittedService.notes || "").trim() : "";
   if (!Number.isFinite(serviceFee) || serviceFee < 0 || serviceFee > 100000000
-    || mechanicName.length > 120 || registrationNumber.length > 40 || serviceNotes.length > 500
+    || mechanicName.length > 120 || registrationNumber.length > 32 || serviceNotes.length > 240
     || (servicePerformed && (!mechanicName || !registrationNumber))) {
     return NextResponse.json({ error: "For a service sale, enter a valid fee, mechanic name, and motorcycle plate." }, { status: 400 });
   }
@@ -128,12 +130,12 @@ export async function POST(req: Request) {
     p_service_performed: servicePerformed,
     p_service_fee: serviceFee,
     p_mechanic_name: mechanicName || null,
-    p_registration_number: registrationNumber || null,
-    p_service_notes: serviceNotes || null,
+    p_motorcycle_plate: registrationNumber || null,
+    p_service_description: serviceNotes || null,
   });
   if (error) return dbErrorResponse(400, error);
   const { data: sale } = await s.supabase.from("sales")
-    .select("id,invoice_number,total,amount_paid,balance_due,created_at,service_performed,service_fee,mechanic_name,registration_number")
+    .select("id,invoice_number,total,amount_paid,balance_due,created_at,service_performed,service_fee,mechanic_name,motorcycle_plate,service_description")
     .eq("id", saleId).single();
   await flushBossAlertEmail();
   return NextResponse.json({ sale, message: "Sale completed and stock deducted using FIFO." }, { status: 201 });
