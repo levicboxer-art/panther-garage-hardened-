@@ -25,32 +25,13 @@ const WHITE = "FFFFFFFF";
 const INK = "152536";
 const MUTED = "526577";
 const PALETTE = [BLUE, AMBER, TEAL, PURPLE, GREEN, RED];
-const COLUMNS = [1.5, 12, 9, 9, 12, 9, 2.5, 12, 9, 9, 12, 9];
-const DETAIL_COLUMNS = [2.5, 18, 14, 12, 18, 14, 7, 18, 14, 12, 18, 14];
-let cachedChartFontCss: string | null = null;
-
-function chartFontCss() {
-  if (cachedChartFontCss === null) {
-    const fontPath = join(process.cwd(), "node_modules", "@fontsource-variable", "manrope", "files", "manrope-latin-wght-normal.woff2");
-    const fontData = readFileSync(fontPath).toString("base64");
-    cachedChartFontCss = `<style>@font-face{font-family:PantherReport;src:url(data:font/woff2;base64,${fontData}) format('woff2');font-weight:100 900;font-style:normal}</style>`;
-  }
-  return cachedChartFontCss;
-}
-
-function escapeXml(value: unknown) {
-  return String(value ?? "").replace(/[<>&"']/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" })[char] || char);
-}
+const COLUMNS = [2.5, 18, 14, 12, 18, 14, 7, 18, 14, 12, 18, 14];
 
 function compactMoney(value: number) {
   if (!Number.isFinite(value)) return "0";
   if (Math.abs(value) >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
   if (Math.abs(value) >= 1_000) return `${(value / 1_000).toFixed(0)}K`;
   return String(Math.round(value));
-}
-
-function exactMoney(value: number) {
-  return Math.round(Number(value) || 0).toLocaleString("en-US", { maximumFractionDigits: 0 });
 }
 
 function formatDate(value: string) {
@@ -63,13 +44,36 @@ function monthLabel(value: string) {
   return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat("en", { month: "short", timeZone: "UTC" }).format(date);
 }
 
+function transactionDate(value: unknown) {
+  if (value instanceof Date) return value;
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const parsed = new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T00:00:00.000Z` : raw);
+  return Number.isNaN(parsed.getTime()) ? raw.slice(0, 19) : parsed;
+}
+
+function transactionDateFormat(value: unknown) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value ?? "")) ? "dd mmm yyyy" : "dd mmm yyyy hh:mm";
+}
+
+function dateTimeLabel(value: unknown) {
+  const parsed = transactionDate(value);
+  if (!(parsed instanceof Date)) return parsed || "Not recorded";
+  return new Intl.DateTimeFormat("en-GB", { dateStyle: "medium", timeStyle: "short", timeZone: "Africa/Kigali" }).format(parsed);
+}
+
+function shortReference(value: unknown) {
+  const token = String(value ?? "").replace(/[^a-z\d]/gi, "").toUpperCase();
+  return token ? token.slice(-6) : "UNKNOWN";
+}
+
 function renderSalesTrend(data: TrendPoint[]) {
   const width = 620;
   const height = 280;
   const left = 62;
   const right = 20;
   const top = 22;
-  const bottom = 62;
+  const bottom = 48;
   const plotWidth = width - left - right;
   const plotHeight = height - top - bottom;
   const clean = data.slice(-6);
@@ -79,76 +83,43 @@ function renderSalesTrend(data: TrendPoint[]) {
   const barWidth = Math.min(42, step * 0.48);
   const grid = ticks.map((tick) => {
     const y = top + plotHeight - (tick / max) * plotHeight;
-    return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="#D9E4ED" stroke-width="1"/><text x="${left - 8}" y="${y + 4}" text-anchor="end" font-size="15" fill="#526577">${escapeXml(compactMoney(tick))}</text>`;
+    return `<line x1="${left}" y1="${y}" x2="${width - right}" y2="${y}" stroke="#D9E4ED" stroke-width="1"/>`;
   }).join("");
   const bars = clean.map((item, index) => {
     const x = left + step * (index + 0.5);
     const revenue = Math.max(0, Number(item.revenue) || 0);
+    const collected = Math.max(0, Number(item.collected) || 0);
     const barHeight = (revenue / max) * plotHeight;
     const y = top + plotHeight - barHeight;
-    return `<rect x="${x - barWidth / 2}" y="${y}" width="${barWidth}" height="${barHeight}" rx="3" fill="#${BLUE}"/>`;
-  }).join("");
-  const revenueLabels = clean.map((item, index) => {
-    const x = left + step * (index + 0.5);
-    const revenue = Math.max(0, Number(item.revenue) || 0);
-    const barHeight = (revenue / max) * plotHeight;
-    const y = top + plotHeight - barHeight;
-    const labelInsideBar = barHeight >= 26 && y <= top + 18;
-    const labelY = labelInsideBar ? y + 15 : Math.max(top + 13, y - 6);
-    return `<text x="${x}" y="${labelY}" text-anchor="middle" font-size="10" font-weight="700" fill="${labelInsideBar ? "#FFFFFF" : `#${INK}`}" stroke="${labelInsideBar ? `#${BLUE}` : "#FFFFFF"}" stroke-width="3" paint-order="stroke">${escapeXml(exactMoney(revenue))}</text>`;
+    return `<rect x="${x - barWidth / 2}" y="${y}" width="${barWidth}" height="${barHeight}" rx="3" fill="#${BLUE}"/><circle cx="${x}" cy="${top + plotHeight - (collected / max) * plotHeight}" r="4" fill="#${GREEN}"/>`;
   }).join("");
   const linePoints = clean.map((item, index) => {
     const x = left + step * (index + 0.5);
     const collected = Math.max(0, Number(item.collected) || 0);
     return `${x},${top + plotHeight - (collected / max) * plotHeight}`;
   }).join(" ");
-  const collectionLabels = clean.map((item, index) => {
-    const x = left + step * (index + 0.5);
-    return `<text x="${x}" y="${height - 33}" text-anchor="middle" font-size="9" font-weight="700" fill="#${GREEN}">${escapeXml(exactMoney(Math.max(0, Number(item.collected) || 0)))}</text>`;
-  }).join("");
-  const monthLabels = clean.map((item, index) => {
-    const x = left + step * (index + 0.5);
-    return `<text x="${x}" y="${height - 52}" text-anchor="middle" font-size="12" fill="#263D52">${escapeXml(monthLabel(item.month))}</text>`;
-  }).join("");
-  const collectedMarkers = clean.map((item, index) => {
-    const x = left + step * (index + 0.5);
-    const collected = Math.max(0, Number(item.collected) || 0);
-    return `<circle cx="${x}" cy="${top + plotHeight - (collected / max) * plotHeight}" r="4" fill="#${GREEN}"/>`;
-  }).join("");
-  const legend = `<text x="${left + 12}" y="${height - 7}" font-size="12" font-weight="700" fill="#${BLUE}">Sales revenue (RWF)</text><text x="${left + 225}" y="${height - 7}" font-size="12" font-weight="700" fill="#${GREEN}">Collected (RWF)</text>`;
-  const hasActivity = clean.some((item) => Number(item.revenue) > 0 || Number(item.collected) > 0);
-  const empty = hasActivity ? "" : `<text x="${width / 2}" y="${top + 24}" text-anchor="middle" font-size="15" fill="#526577">No completed sales in this six-month window</text>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="PantherReport, sans-serif">${chartFontCss()}<rect width="100%" height="100%" fill="#FFFFFF"/>${grid}${bars}${clean.length ? `<polyline points="${linePoints}" fill="none" stroke="#${GREEN}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>${collectedMarkers}` : ""}${revenueLabels}${monthLabels}${collectionLabels}${empty}${legend}</svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#FFFFFF"/>${grid}${bars}${clean.length ? `<polyline points="${linePoints}" fill="none" stroke="#${GREEN}" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>` : ""}</svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();
 }
 
 function renderDonutChart(values: Slice[]) {
-  const width = 150;
-  const height = 160;
-  const cx = 75;
-  const cy = 48;
-  const radius = 33;
-  const stroke = 12;
+  const width = 145;
+  const height = 145;
+  const cx = 72.5;
+  const cy = 72.5;
+  const radius = 48;
+  const stroke = 18;
   const total = values.reduce((sum, item) => sum + Math.max(0, Number(item.value) || 0), 0);
   const circumference = 2 * Math.PI * radius;
   let offset = 0;
   const circles = total > 0 ? values.map((item, index) => {
     const ratio = Math.max(0, Number(item.value) || 0) / total;
     const length = circumference * ratio;
-    const color = item.label === "Healthy" ? GREEN : item.label === "Low stock" ? AMBER : item.label === "Out of stock" ? RED : PALETTE[index % PALETTE.length];
-    const circle = `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="none" stroke="#${color}" stroke-width="${stroke}" stroke-dasharray="${length} ${circumference - length}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    const circle = `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="none" stroke="#${PALETTE[index % PALETTE.length]}" stroke-width="${stroke}" stroke-dasharray="${length} ${circumference - length}" stroke-dashoffset="${-offset}" transform="rotate(-90 ${cx} ${cy})"/>`;
     offset += length;
     return circle;
   }).join("") : `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="none" stroke="#D9E4ED" stroke-width="${stroke}"/>`;
-  const healthy = Number(values.find((item) => item.label === "Healthy")?.value || 0);
-  const percentage = total ? Math.round((healthy / total) * 100) : 0;
-  const labels = values.map((item, index) => {
-    const y = 110 + index * 15;
-    const share = total ? Math.round((Number(item.value) / total) * 100) : 0;
-    const color = item.label === "Healthy" ? GREEN : item.label === "Low stock" ? AMBER : item.label === "Out of stock" ? RED : PALETTE[index % PALETTE.length];
-    return `<circle cx="8" cy="${y - 3}" r="3" fill="#${color}"/><text x="16" y="${y}" font-size="8" fill="#263D52">${escapeXml(item.label)}</text><text x="143" y="${y}" text-anchor="end" font-size="8" font-weight="700" fill="#263D52">${escapeXml(item.value)} · ${share}%</text>`;
-  }).join("");
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="PantherReport, sans-serif">${chartFontCss()}<rect width="100%" height="100%" fill="#FFFFFF"/>${circles}<text x="${cx}" y="${cy + 7}" text-anchor="middle" font-size="20" font-weight="700" fill="#${NAVY}">${percentage}%</text><text x="${cx}" y="${cy + 20}" text-anchor="middle" font-size="7" fill="#526577">healthy</text>${labels}<text x="${cx}" y="${height - 4}" text-anchor="middle" font-size="7" font-weight="700" fill="#263D52">${total ? `${total} active products` : "No active products"}</text></svg>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#FFFFFF"/>${circles}</svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();
 }
 
@@ -162,14 +133,12 @@ function piePath(cx: number, cy: number, radius: number, start: number, end: num
 }
 
 function renderServiceDemand(data: Slice[]) {
-  const width = 580;
-  const height = 300;
-  const cx = 156;
-  const cy = 146;
-  const radius = 104;
-  const sorted = data.filter((item) => Number(item.value) > 0).sort((a, b) => Number(b.value) - Number(a.value));
-  const remainder = sorted.slice(4);
-  const clean = remainder.length ? [...sorted.slice(0, 4), { label: `Other (${remainder.length})`, value: remainder.reduce((sum, item) => sum + Number(item.value), 0) }] : sorted.slice(0, 5);
+  const width = 260;
+  const height = 260;
+  const cx = 130;
+  const cy = 130;
+  const radius = 112;
+  const clean = data.filter((item) => Number(item.value) > 0).slice(0, 5);
   const total = clean.reduce((sum, item) => sum + Number(item.value), 0);
   let angle = -Math.PI / 2;
   const slices = total > 0 && clean.length === 1
@@ -180,13 +149,8 @@ function renderServiceDemand(data: Slice[]) {
     angle = end;
     return path;
   }).join("") : "";
-  const legend = clean.map((item, index) => {
-    const y = 84 + index * 38;
-    const share = total ? `${Math.round((item.value / total) * 100)}%` : "0%";
-    return `<rect x="330" y="${y - 12}" width="14" height="14" rx="4" fill="#${PALETTE[index % PALETTE.length]}"/><text x="354" y="${y}" font-size="13" fill="#263D52">${escapeXml(item.label.length > 27 ? `${item.label.slice(0, 24)}…` : item.label)}</text><text x="550" y="${y}" text-anchor="end" font-size="13" font-weight="700" fill="#263D52">${escapeXml(share)} · ${escapeXml(item.value)}</text>`;
-  }).join("");
-  const empty = total ? "" : `<text x="${width / 2}" y="${height / 2}" text-anchor="middle" font-size="18" fill="#526577">No repair jobs recorded for this period</text>`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" font-family="PantherReport, sans-serif">${chartFontCss()}<rect width="100%" height="100%" fill="#FFFFFF"/>${slices}${legend}${empty}</svg>`;
+  const empty = total ? "" : `<circle cx="${cx}" cy="${cy}" r="${radius}" fill="none" stroke="#D9E4ED" stroke-width="2"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="#FFFFFF"/>${slices}${empty}</svg>`;
   return sharp(Buffer.from(svg)).png().toBuffer();
 }
 
@@ -195,49 +159,14 @@ function border() {
   return { top: side, bottom: side, left: side, right: side };
 }
 
-function alertArea(alert: Row) {
-  const issue = String(alert.issue || "").toLowerCase();
-  if (issue.includes("out of stock") || issue.includes("reorder level")) return "Inventory";
-  if (issue.includes("customer balance") || issue.includes("revenue")) return "Sales & credit";
-  if (issue.includes("operating expense")) return "Expenses";
-  if (issue.includes("repair backlog")) return "Repairs";
-  return "Other";
-}
-
-function summarizeAlerts(alerts: Row[]) {
-  const order = ["Inventory", "Sales & credit", "Expenses", "Repairs", "Other"];
-  return order.map((area) => {
-    const items = alerts.filter((alert) => alertArea(alert) === area);
-    if (!items.length) return null;
-    const severityRank: Record<string, number> = { RED: 3, AMBER: 2, INFO: 1 };
-    const severity = [...items].sort((a, b) => (severityRank[String(b.severity)] || 0) - (severityRank[String(a.severity)] || 0))[0]?.severity || "INFO";
-    let detail = `${items.length} alert${items.length === 1 ? "" : "s"} need review`;
-    if (area === "Inventory") {
-      const out = items.filter((alert) => String(alert.issue || "").toLowerCase().includes("out of stock")).length;
-      const low = items.length - out;
-      detail = [out ? `${out} out of stock` : "", low ? `${low} low stock` : ""].filter(Boolean).join(" · ");
-    } else if (area === "Sales & credit") {
-      const subjects = items.map((alert) => String(alert.issue || "").toLowerCase().includes("customer balance") ? "customer balances" : "revenue trend");
-      detail = [...new Set(subjects)].join(" · ");
-    } else if (area === "Expenses") {
-      detail = items[0].metric ? `Expense alert · ${items[0].metric}` : "Operating expense alert";
-    } else if (area === "Repairs") {
-      detail = items[0].metric || "Repair backlog alert";
-    }
-    return { area, count: items.length, severity, detail };
-  }).filter((item): item is { area: string; count: number; severity: string; detail: string } => item !== null);
-}
-
 function addCanvas(workbook: ExcelJS.Workbook, name: string, printArea: string, fitHeight = 1) {
   const sheet = workbook.addWorksheet(name);
-  const isLandscapeDetail = name === "Transaction Detail" || name === "Inventory Movements" || name === "Management Alerts";
-  const columns = isLandscapeDetail ? DETAIL_COLUMNS : COLUMNS;
-  columns.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
+  COLUMNS.forEach((width, index) => { sheet.getColumn(index + 1).width = width; });
   sheet.properties.defaultRowHeight = 18;
   sheet.views = [{ showGridLines: false }];
   sheet.pageSetup = {
     paperSize: 9,
-    orientation: isLandscapeDetail ? "landscape" : "portrait",
+    orientation: "landscape",
     fitToPage: true,
     fitToWidth: 1,
     fitToHeight: fitHeight,
@@ -248,35 +177,37 @@ function addCanvas(workbook: ExcelJS.Workbook, name: string, printArea: string, 
   return sheet;
 }
 
-function addHeader(workbook: ExcelJS.Workbook, sheet: ExcelJS.Worksheet, report: Row, pageTitle: string, logoImageId: number | null) {
-  [1, 2, 3, 4].forEach((row) => { sheet.getRow(row).height = [32, 24, 22, 22][row - 1]; });
-  sheet.mergeCells("E1:J1");
-  sheet.mergeCells("E2:J2");
-  sheet.mergeCells("E3:J3");
-  const brand = sheet.getCell("E1");
+function addHeader(workbook: ExcelJS.Workbook, sheet: ExcelJS.Worksheet, report: Row, pageTitle: string, logoImageId: number | null, includePeriodPanel = true) {
+  [1, 2, 3, 4].forEach((row) => { sheet.getRow(row).height = row === 1 ? 28 : 20; });
+  sheet.mergeCells("C1:I1");
+  sheet.mergeCells("C2:I2");
+  sheet.mergeCells("C3:I3");
+  const brand = sheet.getCell("C1");
   brand.value = "PANTHER LEGACY GARAGE";
   brand.font = { name: "Arial", size: 18, bold: true, color: { argb: NAVY_DARK } };
-  const title = sheet.getCell("E2");
+  const title = sheet.getCell("C2");
   title.value = pageTitle;
   title.font = { name: "Arial", size: 14, bold: true, color: { argb: NAVY } };
-  const tagline = sheet.getCell("E3");
+  const tagline = sheet.getCell("C3");
   tagline.value = "Drive Smarter. Grow Stronger.";
   tagline.font = { name: "Arial", size: 10, bold: true, italic: true, color: { argb: INK } };
   const period = report.meta?.from && report.meta?.to ? `${formatDate(report.meta.from)} – ${formatDate(report.meta.to)}` : "Not available";
   const month = report.meta?.to ? new Intl.DateTimeFormat("en", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${report.meta.to.slice(0, 10)}T00:00:00.000Z`)) : "Business Report";
   const generatedAt = report.meta?.generated_at ? new Intl.DateTimeFormat("en-GB", { dateStyle: "short", timeStyle: "short", timeZone: "Africa/Kigali" }).format(new Date(report.meta.generated_at)) : "Not available";
   const periodValues = [[`Reporting Period: ${month}`], [`From: ${formatDate(report.meta?.from || "")}`], [`To: ${formatDate(report.meta?.to || "")}`], [`Generated: ${generatedAt}`]];
-  periodValues.forEach(([value], index) => {
-    const row = index + 1;
-    sheet.mergeCells(row, 11, row, 12);
-    const cell = sheet.getCell(row, 11);
-    cell.value = value;
-    cell.font = { name: "Arial", size: index === 0 ? 9 : 8, bold: index === 0, color: { argb: index === 0 ? NAVY_DARK : INK } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: PALE_BLUE } };
-    cell.border = border();
-    cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
-  });
-  if (logoImageId !== null) sheet.addImage(logoImageId, { tl: { col: 0.08, row: 0.08 }, ext: { width: 174, height: 126 } });
+  if (includePeriodPanel) {
+    periodValues.forEach(([value], index) => {
+      const row = index + 1;
+      sheet.mergeCells(row, 11, row, 12);
+      const cell = sheet.getCell(row, 11);
+      cell.value = value;
+      cell.font = { name: "Arial", size: index === 0 ? 9 : 8, bold: index === 0, color: { argb: index === 0 ? NAVY_DARK : INK } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: PALE_BLUE } };
+      cell.border = border();
+      cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+    });
+  }
+  if (logoImageId !== null) sheet.addImage(logoImageId, { tl: { col: 1.05, row: 0.1 }, ext: { width: 78, height: 78 } });
   return period;
 }
 
@@ -314,7 +245,7 @@ function addTable(sheet: ExcelJS.Worksheet, headerRow: number, startCol: number,
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
       cell.border = border();
       cell.alignment = { vertical: "middle", horizontal: typeof raw === "number" ? "right" : "left", wrapText: true };
-      if (typeof raw === "number" && (options.moneyCols?.includes(colIndex) || options.moneyCell?.(values, colIndex))) cell.numFmt = "#,##0;[Red](#,##0)";
+      if (typeof raw === "number" && (options.moneyCols?.includes(colIndex) || options.moneyCell?.(values, colIndex))) cell.numFmt = '"RWF "#,##0;[Red]("RWF "#,##0)';
       if (typeof raw === "number" && options.percentCols?.includes(colIndex)) cell.numFmt = "0.0%";
     });
     sheet.getRow(rowNum).height = 20;
@@ -322,12 +253,46 @@ function addTable(sheet: ExcelJS.Worksheet, headerRow: number, startCol: number,
   return headerRow + rows.length;
 }
 
-function mergeTableGroups(sheet: ExcelJS.Worksheet, headerRow: number, dataRowCount: number, startCol: number, groups: number[][]) {
-  for (let row = headerRow; row <= headerRow + dataRowCount; row += 1) {
-    groups.forEach(([first, last]) => {
-      if (last > first) sheet.mergeCells(row, startCol + first, row, startCol + last);
-    });
+function addServiceDemandLegend(sheet: ExcelJS.Worksheet, values: Slice[]) {
+  const total = values.reduce((sum, item) => sum + Math.max(0, Number(item.value) || 0), 0);
+  const headerRow = 7;
+  const headings = ["", "Service / issue", "Jobs · share"];
+  headings.forEach((value, index) => {
+    const cell = sheet.getCell(headerRow, 10 + index);
+    cell.value = value;
+    cell.font = { name: "Arial", size: 8, bold: true, color: { argb: INK } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: LIGHT_BLUE } };
+    cell.border = border();
+    cell.alignment = { vertical: "middle", horizontal: index === 2 ? "center" : "left", wrapText: true };
+  });
+  sheet.getRow(headerRow).height = 26;
+
+  const clean = values.filter((item) => Number(item.value) > 0).slice(0, 5);
+  if (!clean.length) {
+    sheet.mergeCells(8, 10, 9, 12);
+    const cell = sheet.getCell(8, 10);
+    cell.value = "No repair jobs recorded for this period.";
+    cell.font = { name: "Arial", size: 8, color: { argb: MUTED } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    return;
   }
+
+  clean.forEach((item, index) => {
+    const row = headerRow + index + 1;
+    const share = total ? Math.round((Number(item.value) / total) * 100) : 0;
+    const cells = [sheet.getCell(row, 10), sheet.getCell(row, 11), sheet.getCell(row, 12)];
+    cells[0].fill = { type: "pattern", pattern: "solid", fgColor: { argb: PALETTE[index % PALETTE.length] } };
+    cells[0].value = "";
+    cells[1].value = item.label;
+    cells[2].value = `${item.value} · ${share}%`;
+    cells.forEach((cell, columnIndex) => {
+      cell.font = { name: "Arial", size: 8, bold: columnIndex === 2, color: { argb: INK } };
+      if (columnIndex > 0) cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: index % 2 ? "F6F9FC" : WHITE } };
+      cell.border = border();
+      cell.alignment = { vertical: "middle", horizontal: columnIndex === 2 ? "center" : "left", wrapText: columnIndex === 1 };
+    });
+    sheet.getRow(row).height = 29;
+  });
 }
 
 function addKpi(sheet: ExcelJS.Worksheet, startCol: number, label: string, value: unknown, footnote: string, fill: string, negative = false) {
@@ -378,141 +343,139 @@ function addSummarySheet(workbook: ExcelJS.Workbook, report: Row, images: { tren
   const result = k.net_operating_result;
   addKpi(sheet, 11, "Net Result", result, k.result_status || "Not available", result !== null && result < 0 ? LIGHT_RED : LIGHT_GREEN, result !== null && result < 0);
   [7, 8, 9].forEach((row) => { sheet.getRow(row).height = row === 8 ? 30 : 23; });
-  for (let row = 12; row <= 22; row += 1) sheet.getRow(row).height = 6;
 
   addSectionBar(sheet, 11, "Sales Trend (Last 6 Months)", 2, 6);
   addSectionBar(sheet, 11, "Inventory Health", 8, 9);
   addSectionBar(sheet, 11, "Key Alerts", 11, 12);
-  addImage(sheet, images.trend, 2, 12, 356, 161);
-  addImage(sheet, images.inventory, 8, 12, 150, 160);
-  const allAlerts = (report.insights || []) as Row[];
-  const alertGroups = summarizeAlerts(allAlerts);
-  if (!alertGroups.length) {
-    sheet.mergeCells("K12:L13");
-    sheet.getCell("K12").value = "No system alerts for this reporting period.";
+  addImage(sheet, images.trend, 2, 12, 418, 178);
+  addImage(sheet, images.inventory, 8, 12, 145, 145);
+  const trend = (report.sales?.trend || []).slice(-6);
+  if (trend.length) {
+    addTable(sheet, 20, 2, ["Metric", ...trend.map((item: TrendPoint) => monthLabel(item.month))], [
+      ["Revenue", ...trend.map((item: TrendPoint) => compactMoney(Number(item.revenue) || 0))],
+      ["Collected", ...trend.map((item: TrendPoint) => compactMoney(Number(item.collected) || 0))],
+    ]);
+  } else {
+    sheet.mergeCells("B20:H22");
+    sheet.getCell("B20").value = "No sales recorded in the six-month window.";
+    sheet.getCell("B20").font = { name: "Arial", size: 8, color: { argb: MUTED } };
+    sheet.getCell("B20").alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  }
+  const stockHealth = [
+    ["Healthy", Number(report.inventory?.products?.filter((item: Row) => item.stock_status === "HEALTHY").length || 0)],
+    ["Low stock", Number(report.inventory?.products?.filter((item: Row) => item.stock_status === "LOW_STOCK").length || 0)],
+    ["Out of stock", Number(report.inventory?.products?.filter((item: Row) => item.stock_status === "OUT_OF_STOCK").length || 0)],
+  ];
+  addTable(sheet, 19, 9, ["Stock status", "Products"], stockHealth);
+  const alerts = (report.insights || []).slice(0, 3);
+  if (!alerts.length) {
+    sheet.mergeCells("K12:L14");
+    sheet.getCell("K12").value = "No management alerts were generated for this period.";
     sheet.getCell("K12").font = { name: "Arial", size: 9, color: { argb: MUTED } };
     sheet.getCell("K12").alignment = { vertical: "middle", wrapText: true };
-    sheet.getRow(12).height = 16;
-    sheet.getRow(13).height = 16;
   } else {
-    alertGroups.forEach((group, index) => {
-      const row = 12 + index * 2;
+    alerts.forEach((alert: Row, index: number) => {
+      const row = 12 + index * 3;
       sheet.mergeCells(row, 11, row, 12);
       sheet.mergeCells(row + 1, 11, row + 1, 12);
-      const color = group.severity === "RED" ? RED : group.severity === "AMBER" ? AMBER : BLUE;
+      const color = alert.severity === "RED" ? RED : alert.severity === "AMBER" ? AMBER : BLUE;
       const title = sheet.getCell(row, 11);
-      title.value = `${group.area}: ${group.count} alert${group.count === 1 ? "" : "s"}`;
+      title.value = `${alert.severity || "INFO"}: ${alert.issue || "Management note"}`;
       title.font = { name: "Arial", size: 8, bold: true, color: { argb: color } };
       title.alignment = { vertical: "middle", wrapText: true };
       const detail = sheet.getCell(row + 1, 11);
-      detail.value = group.detail;
+      detail.value = `${alert.metric || ""}${alert.recommended_action ? ` · ${alert.recommended_action}` : ""}`;
       detail.font = { name: "Arial", size: 7, color: { argb: MUTED } };
       detail.alignment = { vertical: "middle", wrapText: true };
-      sheet.getRow(row).height = 12;
-      sheet.getRow(row + 1).height = 12;
+      sheet.getRow(row).height = 26;
+      sheet.getRow(row + 1).height = 30;
     });
-    sheet.mergeCells("K22:L22");
-    sheet.getCell("K22").value = "See Management Alerts sheet";
-    sheet.getCell("K22").font = { name: "Arial", size: 7, italic: true, color: { argb: MUTED } };
-    sheet.getCell("K22").alignment = { vertical: "middle", wrapText: true };
-    sheet.getRow(22).height = 12;
   }
 
   addSectionBar(sheet, 23, "Financial Performance", 2, 6);
   addSectionBar(sheet, 23, "Payment Collection", 8, 12);
   const grossSales = Number(fin.gross_sales || 0);
-  const previousRevenue = k.revenue_change_pct === null || k.revenue_change_pct === undefined ? "" : `${k.revenue_change_pct >= 0 ? "▲" : "▼"} ${Math.abs(k.revenue_change_pct)}%`;
-  const previousExpenses = k.expense_change_pct === null || k.expense_change_pct === undefined ? "" : `${k.expense_change_pct >= 0 ? "▲" : "▼"} ${Math.abs(k.expense_change_pct)}%`;
   const financialRows = [
-    ["Gross Sales", "", valueOrUnavailable(fin.gross_sales), grossSales ? 1 : null, ""],
-    ["Discounts", "", valueOrUnavailable(fin.discounts), grossSales ? Number(fin.discounts || 0) / grossSales : null, ""],
-    ["Net Sales Revenue", "", valueOrUnavailable(fin.net_sales_revenue), grossSales ? Number(fin.net_sales_revenue || 0) / grossSales : null, previousRevenue],
-    ["Cost of Goods Sold", "", valueOrUnavailable(fin.cost_of_goods_sold), grossSales && fin.cost_of_goods_sold !== null ? Number(fin.cost_of_goods_sold) / grossSales : null, ""],
-    ["Gross Profit", "", valueOrUnavailable(fin.gross_profit), grossSales && fin.gross_profit !== null ? Number(fin.gross_profit) / grossSales : null, ""],
-    ["Operating Expenses", "", valueOrUnavailable(fin.operating_expenses), grossSales ? Number(fin.operating_expenses || 0) / grossSales : null, previousExpenses],
-    ["Net Result (Profit/Loss)", "", valueOrUnavailable(fin.net_operating_result), grossSales && fin.net_operating_result !== null ? Number(fin.net_operating_result) / grossSales : null, ""],
+    ["Gross Sales", valueOrUnavailable(fin.gross_sales), grossSales ? 1 : null, "", ""],
+    ["Discounts", valueOrUnavailable(fin.discounts), grossSales ? Number(fin.discounts || 0) / grossSales : null, "", ""],
+    ["Net Sales Revenue", valueOrUnavailable(fin.net_sales_revenue), grossSales ? Number(fin.net_sales_revenue || 0) / grossSales : null, revenueChange, ""],
+    ["Cost of Goods Sold", valueOrUnavailable(fin.cost_of_goods_sold), grossSales && fin.cost_of_goods_sold !== null ? Number(fin.cost_of_goods_sold) / grossSales : null, "", ""],
+    ["Gross Profit", valueOrUnavailable(fin.gross_profit), grossSales && fin.gross_profit !== null ? Number(fin.gross_profit) / grossSales : null, "", fin.result_status || ""],
+    ["Operating Expenses", valueOrUnavailable(fin.operating_expenses), grossSales ? Number(fin.operating_expenses || 0) / grossSales : null, k.expense_change_pct === null || k.expense_change_pct === undefined ? "" : `${k.expense_change_pct}% vs previous period`, ""],
+    ["Net Result (Profit/Loss)", valueOrUnavailable(fin.net_operating_result), grossSales && fin.net_operating_result !== null ? Number(fin.net_operating_result) / grossSales : null, "", fin.result_status || ""],
   ];
-  addTable(sheet, 24, 2, ["Category", "", "Amount (RWF)", "% of Sales", "vs Previous"], financialRows, {
-    moneyCols: [2],
-    percentCols: [3],
+  addTable(sheet, 24, 2, ["Category", "Amount (RWF)", "% of Sales", "vs Previous", "Status"], financialRows, {
+    moneyCols: [1],
+    percentCols: [2],
     highlight: (row) => String(row[0]).includes("Gross Profit") ? LIGHT_GREEN : String(row[0]).includes("Net Result") && fin.result_status === "LOSS" ? LIGHT_RED : null,
   });
-  mergeTableGroups(sheet, 24, financialRows.length, 2, [[0, 1]]);
-  const payRows = (report.payments?.by_method || []).slice(0, 5).map((item: Row) => [item.method, "", item.amount, report.payments.successful_value ? Number(item.amount) / Number(report.payments.successful_value) : 0, ""]);
-  payRows.push(["Total Collected", "", report.payments?.successful_value ?? 0, report.payments?.successful_value ? 1 : 0, ""]);
-  addTable(sheet, 24, 8, ["Method", "", "Amount (RWF)", "Share", ""], payRows, { moneyCols: [2], percentCols: [3], highlight: (row) => String(row[0]) === "Total Collected" ? LIGHT_BLUE : null });
-  mergeTableGroups(sheet, 24, payRows.length, 8, [[0, 1], [3, 4]]);
+  const payRows = (report.payments?.by_method || []).slice(0, 5).map((item: Row) => [item.method, item.count, item.amount, report.payments.successful_value ? Number(item.amount) / Number(report.payments.successful_value) : 0]);
+  payRows.push(["Total Collected", report.payments?.successful_count ?? 0, report.payments?.successful_value ?? 0, report.payments?.successful_value ? 1 : 0]);
+  addTable(sheet, 24, 8, ["Method", "Transactions", "Amount (RWF)", "Share"], payRows, { moneyCols: [2], percentCols: [3], highlight: (row) => String(row[0]) === "Total Collected" ? LIGHT_BLUE : null });
 
   addSectionBar(sheet, 34, "Inventory Overview", 2, 6);
   addSectionBar(sheet, 34, "Top 5 Best-Selling Spare Parts", 8, 12);
   const inventory = report.inventory?.summary || {};
   const inventoryRows = [
-    ["Total Products", "", "", inventory.distinct_products ?? 0, ""],
-    ["Total Units in Stock", "", "", inventory.units_in_stock ?? 0, ""],
-    ["Stock Purchase Value", "", "", inventory.stock_purchase_value ?? 0, ""],
-    ["Potential Sales Value", "", "", inventory.estimated_potential_sales_value ?? 0, ""],
-    ["Low Stock Items", "", "", inventory.low_stock_products ?? 0, ""],
-    ["Out of Stock Items", "", "", inventory.out_of_stock_products ?? 0, ""],
+    ["Total Products", inventory.distinct_products ?? 0],
+    ["Total Units in Stock", inventory.units_in_stock ?? 0],
+    ["Stock Purchase Value", inventory.stock_purchase_value ?? 0],
+    ["Potential Sales Value", inventory.estimated_potential_sales_value ?? 0],
+    ["Low Stock Items", inventory.low_stock_products ?? 0],
+    ["Out of Stock Items", inventory.out_of_stock_products ?? 0],
   ];
-  addTable(sheet, 35, 2, ["Metric", "", "", "Value", ""], inventoryRows, { moneyCell: (row, col) => col === 3 && String(row[0]).includes("Value"), highlight: (row) => String(row[0]).includes("Out of Stock") && Number(row[3]) > 0 ? LIGHT_RED : String(row[0]).includes("Low Stock") && Number(row[3]) > 0 ? LIGHT_AMBER : null });
-  mergeTableGroups(sheet, 35, inventoryRows.length, 2, [[0, 2], [3, 4]]);
+  addTable(sheet, 35, 2, ["Metric", "Value"], inventoryRows, { moneyCell: (row, col) => col === 1 && String(row[0]).includes("Value"), highlight: (row) => String(row[0]).includes("Out of Stock") && Number(row[1]) > 0 ? LIGHT_RED : String(row[0]).includes("Low Stock") && Number(row[1]) > 0 ? LIGHT_AMBER : null });
   const topProducts = [...(report.sales?.product_sales || [])].sort((a: Row, b: Row) => Number(b.revenue || 0) - Number(a.revenue || 0)).slice(0, 5)
-    .map((item: Row) => [item.product_name || "Unknown product", "", item.units, item.revenue, ""]);
-  addTable(sheet, 35, 8, ["Product", "", "Qty Sold", "Revenue (RWF)", ""], topProducts, { moneyCols: [3] });
-  mergeTableGroups(sheet, 35, topProducts.length, 8, [[0, 1], [3, 4]]);
+    .map((item: Row) => [item.product_name || "Unknown product", item.units, item.revenue]);
+  addTable(sheet, 35, 8, ["Product", "Qty Sold", "Revenue (RWF)"], topProducts, { moneyCols: [2] });
   return sheet;
 }
 
 function addPerformanceSheet(workbook: ExcelJS.Workbook, report: Row, demandImageId: number, logoImageId: number | null) {
   const sheet = addCanvas(workbook, "Performance Detail", "A1:L45", 1);
-  addHeader(workbook, sheet, report, "Monthly Business Performance Report", logoImageId);
+  addHeader(workbook, sheet, report, "Monthly Business Performance Report · Detail", logoImageId);
   addSectionBar(sheet, 6, "Repair & Service Performance", 2, 6);
   addSectionBar(sheet, 6, "Services Demand", 8, 12);
   const repairSummary = report.repairs?.summary || {};
   const repairRows = [
-    ["Total Repair Jobs", "", "", repairSummary.total_jobs ?? 0, ""],
-    ["Completed Repairs", "", "", repairSummary.completed_jobs ?? 0, ""],
-    ["Pending Repairs", "", "", repairSummary.pending_jobs ?? 0, ""],
-    ["Repair Revenue", "", "", repairSummary.repair_service_revenue ?? 0, ""],
-    ["Average Completion Time", "", "", repairSummary.average_completion_days === null || repairSummary.average_completion_days === undefined ? "Not available" : `${repairSummary.average_completion_days} days`, ""],
+    ["Total Repair Jobs", repairSummary.total_jobs ?? 0],
+    ["Completed Repairs", repairSummary.completed_jobs ?? 0],
+    ["Pending Repairs", repairSummary.pending_jobs ?? 0],
+    ["Repair Revenue", repairSummary.repair_service_revenue ?? 0],
+    ["Average Completion Time", repairSummary.average_completion_days === null || repairSummary.average_completion_days === undefined ? "Not available" : `${repairSummary.average_completion_days} days`],
   ];
-  addTable(sheet, 7, 2, ["Metric", "", "", "Value", ""], repairRows, { moneyCell: (row, col) => col === 3 && String(row[0]).includes("Revenue") });
-  mergeTableGroups(sheet, 7, repairRows.length, 2, [[0, 2], [3, 4]]);
-  addImage(sheet, demandImageId, 8, 7, 356, 184);
-  for (let row = 13; row <= 17; row += 1) sheet.getRow(row).height = 3;
+  addTable(sheet, 7, 2, ["Metric", "Value"], repairRows, { moneyCell: (row, col) => col === 1 && String(row[0]).includes("Revenue") });
+  addImage(sheet, demandImageId, 8, 7, 170, 170);
+  addServiceDemandLegend(sheet, (report.repairs?.service_demand || []) as Slice[]);
 
   addSectionBar(sheet, 18, "Expenses & Procurement", 2, 6);
   addSectionBar(sheet, 18, "Customer Performance", 8, 12);
   const expenses = report.expenses || {};
-  const expenseRows = (expenses.by_category || []).slice(0, 5).map((item: Row) => [item.category || "Unclassified", "", "", item.amount, ""]);
-  expenseRows.push(["Supplier Purchases (inventory; not OPEX)", "", "", expenses.summary?.supplier_purchases ?? 0, ""]);
-  expenseRows.push(["Total Approved Operating Expenses", "", "", expenses.summary?.total_expenses ?? 0, ""]);
-  addTable(sheet, 19, 2, ["Category / Procurement", "", "", "Amount (RWF)", ""], expenseRows, {
-    moneyCols: [3],
+  const expenseRows = (expenses.by_category || []).slice(0, 5).map((item: Row) => [item.category || "Unclassified", item.amount, item.count]);
+  expenseRows.push(["Supplier Purchases (inventory; not OPEX)", expenses.summary?.supplier_purchases ?? 0, expenses.summary?.purchase_orders ?? 0]);
+  expenseRows.push(["Total Approved Operating Expenses", expenses.summary?.total_expenses ?? 0, ""]);
+  addTable(sheet, 19, 2, ["Category / Procurement", "Amount (RWF)", "Records"], expenseRows, {
+    moneyCols: [1],
     highlight: (row) => String(row[0]).startsWith("Total Approved") ? LIGHT_RED : String(row[0]).startsWith("Supplier") ? LIGHT_BLUE : null,
   });
-  mergeTableGroups(sheet, 19, expenseRows.length, 2, [[0, 2], [3, 4]]);
   const customer = report.customers || {};
   const customerRows = [
-    ["Total Customers", "", "", customer.registered ?? 0, ""],
-    ["New Customers", "", "", customer.new_customers ?? 0, ""],
-    ["Returning Customers", "", "", customer.returning_customers ?? 0, ""],
-    ["Average Order Value", "", "", customer.average_order_value ?? 0, ""],
-    ["Outstanding Balances", "", "", customer.outstanding_balances ?? 0, ""],
+    ["Total Customers", customer.registered ?? 0],
+    ["New Customers", customer.new_customers ?? 0],
+    ["Returning Customers", customer.returning_customers ?? 0],
+    ["Average Order Value", customer.average_order_value ?? 0],
+    ["Outstanding Balances", customer.outstanding_balances ?? 0],
   ];
-  addTable(sheet, 19, 8, ["Metric", "", "", "Value", ""], customerRows, { moneyCell: (row, col) => col === 3 && /Order Value|Balances/.test(String(row[0])) });
-  mergeTableGroups(sheet, 19, customerRows.length, 8, [[0, 2], [3, 4]]);
+  addTable(sheet, 19, 8, ["Metric", "Value"], customerRows, { moneyCell: (row, col) => col === 1 && /Order Value|Balances/.test(String(row[0])) });
 
   addSectionBar(sheet, 28, "Top Performing Products & Services", 2, 12);
   addSectionBar(sheet, 29, "Top Products by Revenue", 2, 6);
   addSectionBar(sheet, 29, "Top Services by Revenue", 8, 12);
   const products = [...(report.sales?.product_sales || [])].sort((a: Row, b: Row) => Number(b.revenue || 0) - Number(a.revenue || 0)).slice(0, 5)
-    .map((item: Row) => [item.product_name || "Unknown product", "", "", item.revenue, ""]);
-  addTable(sheet, 30, 2, ["Product", "", "", "Revenue (RWF)", ""], products, { moneyCols: [3] });
-  mergeTableGroups(sheet, 30, products.length, 2, [[0, 2], [3, 4]]);
-  const services = (report.repairs?.service_revenue || []).slice(0, 5).map((item: Row) => [item.service, "", "", item.revenue, ""]);
-  addTable(sheet, 30, 8, ["Service", "", "", "Revenue (RWF)", ""], services, { moneyCols: [3] });
-  mergeTableGroups(sheet, 30, services.length, 8, [[0, 2], [3, 4]]);
+    .map((item: Row) => [item.product_name || "Unknown product", item.revenue, item.units]);
+  addTable(sheet, 30, 2, ["Product", "Revenue (RWF)", "Qty Sold"], products, { moneyCols: [1] });
+  const services = (report.repairs?.service_revenue || []).slice(0, 5).map((item: Row) => [item.service, item.revenue, item.jobs]);
+  addTable(sheet, 30, 8, ["Recorded service / issue", "Revenue (RWF)", "Jobs"], services, { moneyCols: [1] });
 
   addSectionBar(sheet, 37, "Management Insights & Recommendations", 2, 12);
   const insights = (report.insights || []).slice(0, 6).map((item: Row) => [item.severity || "INFO", item.issue || "Management note", item.metric || "", item.recommended_action || ""]);
@@ -529,81 +492,100 @@ function addPerformanceSheet(workbook: ExcelJS.Workbook, report: Row, demandImag
   return sheet;
 }
 
-function addManagementAlertSheet(workbook: ExcelJS.Workbook, report: Row, logoImageId: number | null) {
-  const alerts = (report.insights || []) as Row[];
-  if (!alerts.length) return null;
-  const sheet = addCanvas(workbook, "Management Alerts", "A1:L50000", 0);
-  addHeader(workbook, sheet, report, "Monthly Business Performance Report · All Alerts", logoImageId);
-  sheet.mergeCells("B5:L5");
-  sheet.getCell("B5").value = `Complete alert feed for this report: ${alerts.length} system alert${alerts.length === 1 ? "" : "s"}. Every alert from the report data builder is listed below.`;
-  sheet.getCell("B5").font = { name: "Arial", size: 8, italic: true, color: { argb: MUTED } };
-  sheet.getCell("B5").alignment = { wrapText: true, vertical: "middle" };
-  sheet.getRow(5).height = 26;
-  addSectionBar(sheet, 7, "All System Alerts", 2, 12);
-  const rows = alerts.map((alert) => [
-    alert.severity || "INFO",
-    alertArea(alert),
-    alert.issue || "Management note",
-    "",
-    alert.metric || "Not available",
-    "",
-    alert.recommended_action || "Review the underlying report records.",
-    "",
-    "",
-    "",
-    "",
-  ]);
-  const lastRow = addTable(sheet, 8, 2, ["Severity", "Area", "Alert", "", "Evidence", "", "Recommended Action", "", "", "", ""], rows, {
-    highlight: (row) => row[0] === "RED" ? LIGHT_RED : row[0] === "AMBER" ? LIGHT_AMBER : row[0] === "INFO" ? PALE_BLUE : null,
-  });
-  mergeTableGroups(sheet, 8, rows.length, 2, [[2, 3], [4, 5], [6, 10]]);
-  for (let row = 9; row <= lastRow; row += 1) sheet.getRow(row).height = 22;
-  sheet.pageSetup.printArea = `A1:L${Math.max(lastRow + 1, 10)}`;
-  sheet.pageSetup.printTitlesRow = "7:8";
-  return sheet;
-}
-
 function addActivitySheet(workbook: ExcelJS.Workbook, report: Row, logoImageId: number | null) {
-  const sheet = addCanvas(workbook, "Transaction Detail", "A1:L50000", 0);
-  addHeader(workbook, sheet, report, "Monthly Business Performance Report · Records", logoImageId);
-  sheet.mergeCells("B5:L5");
-  sheet.getCell("B5").value = "Supporting records for the summary pages. Figures are drawn from recorded PGMS transactions; purchase orders are shown separately from operating expenses.";
+  const sheet = addCanvas(workbook, "Transaction Detail", "B1:I50000", 0);
+  [16, 13, 17, 25, 9, 14, 15, 32].forEach((width, index) => { sheet.getColumn(index + 2).width = width; });
+  const period = addHeader(workbook, sheet, report, "Monthly Business Performance Report · Records", logoImageId, false);
+  sheet.mergeCells("C4:I4");
+  const generated = report.meta?.generated_at ? ` · Generated ${dateTimeLabel(report.meta.generated_at)}` : "";
+  sheet.getCell("C4").value = `Reporting period: ${period}${generated} · Currency: RWF`;
+  sheet.getCell("C4").font = { name: "Arial", size: 8, bold: true, color: { argb: NAVY } };
+  sheet.getCell("C4").alignment = { vertical: "middle", wrapText: true };
+  sheet.mergeCells("B5:I5");
+  sheet.getCell("B5").value = "Recorded business transactions and stock movements for the selected period. Amounts are shown in RWF; stock changes have no monetary value unless recorded.";
   sheet.getCell("B5").font = { name: "Arial", size: 8, italic: true, color: { argb: MUTED } };
-  sheet.getCell("B5").alignment = { wrapText: true };
-  sheet.getRow(5).height = 28;
-  let row = 7;
-  const addDetailTable = (title: string, headers: string[], rows: unknown[][], moneyCols: number[] = []) => {
-    addSectionBar(sheet, row, title, 2, Math.min(12, 1 + headers.length));
-    row += 1;
-    const final = addTable(sheet, row, 2, headers, rows, { moneyCols });
-    row = Math.max(row + rows.length + 2, final + 2);
-  };
-  const sales = (report.sales?.invoices || []).map((item: Row) => [item.invoice, item.date, item.total, item.discount, item.amount_paid, item.balance_due, item.payment_method]);
-  addDetailTable("Sales Invoices & Collections", ["Invoice", "Date", "Total (RWF)", "Discount (RWF)", "Collected (RWF)", "Balance (RWF)", "Method"], sales, [2, 3, 4, 5]);
-  const repairs = (report.repairs?.jobs || []).map((item: Row) => [item.repair_reference, item.service_type, item.status, item.received_date, item.completion_date, item.labour_charge, item.parts_charge, item.total_charge]);
-  addDetailTable("Repair Jobs", ["Reference", "Recorded issue / service", "Status", "Received", "Completed", "Labour (RWF)", "Parts (RWF)", "Total (RWF)"], repairs, [5, 6, 7]);
-  const expenses = (report.expenses?.transactions || []).map((item: Row) => [item.date, item.reference, item.category, item.description, item.amount, item.status, item.payment_method]);
-  addDetailTable("Operating Expense Transactions", ["Date", "Reference", "Category", "Description", "Amount (RWF)", "Status", "Method"], expenses, [4]);
-  const purchases = (report.purchases || []).map((item: Row) => [item.purchase_order, item.date, item.status, item.subtotal, item.accounting_treatment]);
-  addDetailTable("Supplier Purchase Orders", ["Purchase Order", "Date", "Status", "Subtotal (RWF)", "Accounting Treatment"], purchases, [3]);
-  sheet.pageSetup.printArea = `A1:L${Math.max(row, 12)}`;
-  return sheet;
-}
-
-function addInventoryMovementSheet(workbook: ExcelJS.Workbook, report: Row, logoImageId: number | null) {
-  const sheet = addCanvas(workbook, "Inventory Movements", "A1:L50000", 0);
-  addHeader(workbook, sheet, report, "Monthly Business Performance Report · Inventory Movements", logoImageId);
-  sheet.mergeCells("B5:L5");
-  sheet.getCell("B5").value = "Supporting inventory ledger for the reporting period. Section and column headings repeat on continuation pages.";
-  sheet.getCell("B5").font = { name: "Arial", size: 8, italic: true, color: { argb: MUTED } };
-  sheet.getCell("B5").alignment = { wrapText: true };
+  sheet.getCell("B5").alignment = { vertical: "middle", wrapText: true };
   sheet.getRow(5).height = 24;
-  const rows = (report.inventory?.movements || []).map((item: Row) => [item.created_at, item.movement_type, item.product_id, item.quantity_delta, item.reason, item.reference_type, item.reference_id]);
-  addSectionBar(sheet, 7, "Inventory Movements", 2, 8);
-  const lastRow = addTable(sheet, 8, 2, ["Date", "Movement", "Product ID", "Quantity Change", "Reason", "Reference Type", "Reference"], rows);
-  for (let row = 9; row <= lastRow; row += 1) sheet.getRow(row).height = 15;
-  sheet.pageSetup.printArea = `A1:L${Math.max(lastRow + 1, 10)}`;
-  sheet.pageSetup.printTitlesRow = "7:8";
+
+  const amountText = (value: unknown) => Math.round(Number(value) || 0).toLocaleString("en-US");
+  const transactions: { sortAt: number; date: Date | string | null; dateFormat: string; values: unknown[] }[] = [];
+  const addTransaction = (date: unknown, values: unknown[]) => {
+    const normalizedDate = transactionDate(date);
+    transactions.push({
+      sortAt: normalizedDate instanceof Date ? normalizedDate.getTime() : 0,
+      date: normalizedDate,
+      dateFormat: transactionDateFormat(date),
+      values: [normalizedDate, ...values],
+    });
+  };
+
+  for (const item of report.sales?.invoices || []) {
+    addTransaction(item.date, [
+      "SALE", item.invoice || "Invoice", "Sales invoice", "—", Number(item.total) || 0,
+      ({ MOBILE_MONEY: "MOBILE", BANK_TRANSFER: "BANK", CASH: "CASH", CARD: "CARD", CREDIT: "CREDIT" } as Record<string, string>)[item.payment_method] || "OTHER",
+      `Paid ${amountText(item.amount_paid)} | Due ${amountText(item.balance_due)} | Disc ${amountText(item.discount)}`,
+    ]);
+  }
+  for (const item of report.repairs?.jobs || []) {
+    const completed = item.completion_date ? ` · Done ${new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", timeZone: "Africa/Kigali" }).format(new Date(item.completion_date))}` : "";
+    addTransaction(item.received_date, [
+      "REPAIR", item.repair_reference || "Repair job", item.service_type || "Motorcycle repair", "—",
+      Number(item.total_charge) || 0, String(item.status || "UNKNOWN").replaceAll("_", " "),
+      `Lab ${amountText(item.labour_charge)} · Parts ${amountText(item.parts_charge)}${completed}`,
+    ]);
+  }
+  for (const item of report.expenses?.transactions || []) {
+    addTransaction(item.date, [
+      "EXPENSE", item.reference || "Expense", [item.category, item.description].filter(Boolean).join(" · ") || "Expense",
+      "—", Number(item.amount) || 0,
+      [item.status, item.payment_method].filter(Boolean).map((value: string) => value.replaceAll("_", " ")).join(" · ") || "—",
+      "Recorded operating expense",
+    ]);
+  }
+  for (const item of report.purchases || []) {
+    addTransaction(item.date, [
+      "PURCHASE", item.purchase_order || "Purchase order", "Inventory purchase",
+      "—", Number(item.subtotal) || 0, String(item.status || "UNKNOWN").replaceAll("_", " "), "Inventory; not OPEX",
+    ]);
+  }
+  for (const item of report.inventory?.movements || []) {
+    addTransaction(item.created_at, [
+      ({ SALE: "STOCK SALE", REPAIR_ISSUE: "STOCK ISSUE", ADJUSTMENT: "ADJUSTMENT", DAMAGE: "DAMAGE", LOSS: "LOSS", WRITE_OFF: "WRITE-OFF" } as Record<string, string>)[item.movement_type] || "STOCK MOVE",
+      item.reference_label || `MOV-${shortReference(item.id || item.reference_id)}`,
+      item.product_name || item.product_sku || `Product ${shortReference(item.product_id)}`,
+      Number(item.quantity_delta) || 0, "—", String(item.reference_type || "Stock ledger").replaceAll("_", " "), item.reason || "Stock movement",
+    ]);
+  }
+  transactions.sort((a, b) => b.sortAt - a.sortAt);
+
+  const headers = ["Date / time", "Record type", "Reference", "Description", "Qty / change", "Amount (RWF)", "Status / method", "Notes"];
+  const dataRows = transactions.map((transaction) => transaction.values);
+  const lastRow = addTable(sheet, 6, 2, headers, dataRows, { moneyCols: [5] });
+  if (!transactions.length) {
+    sheet.mergeCells("B7:I8");
+    sheet.getCell("B7").value = "No transaction records were found for this period.";
+    sheet.getCell("B7").font = { name: "Arial", size: 9, color: { argb: MUTED } };
+    sheet.getCell("B7").alignment = { vertical: "middle", horizontal: "center" };
+  }
+
+  transactions.forEach((transaction, index) => {
+    const row = index + 7;
+    const dateCell = sheet.getCell(row, 2);
+    dateCell.numFmt = transaction.dateFormat;
+    dateCell.alignment = { vertical: "middle", horizontal: "center", wrapText: false };
+    [3, 4, 6, 7, 8, 9].forEach((column) => {
+      const cell = sheet.getCell(row, column);
+      cell.alignment = { vertical: "middle", horizontal: column === 7 ? "right" : "left", wrapText: column === 6 || column === 9 };
+    });
+    const description = String(transaction.values[3] ?? "");
+    const notes = String(transaction.values[7] ?? "");
+    sheet.getRow(row).height = Math.min(38, Math.max(20, Math.ceil(Math.max(description.length / 30, notes.length / 30)) * 10 + 10));
+  });
+
+  sheet.autoFilter = { from: "B6", to: `I${Math.max(lastRow, 6)}` };
+  sheet.views = [{ state: "frozen", xSplit: 2, ySplit: 6, showGridLines: false }];
+  sheet.pageSetup.printArea = `B1:I${Math.max(lastRow, 8)}`;
+  sheet.pageSetup.printTitlesRow = "1:6";
   return sheet;
 }
 
@@ -645,8 +627,6 @@ export async function createReferenceBusinessWorkbook(report: Row) {
 
   addSummarySheet(workbook, report, { trend: trendId, inventory: healthId }, logoImageId);
   addPerformanceSheet(workbook, report, demandId, logoImageId);
-  if ((report.insights || []).length) addManagementAlertSheet(workbook, report, logoImageId);
   addActivitySheet(workbook, report, logoImageId);
-  if ((report.inventory?.movements || []).length) addInventoryMovementSheet(workbook, report, logoImageId);
   return workbook.xlsx.writeBuffer();
 }
