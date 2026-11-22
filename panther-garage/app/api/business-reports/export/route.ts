@@ -21,6 +21,7 @@ function reportRows(report: any, category: ReportCategory) {
   const sheets: Record<string, Record<string, unknown>[]> = {
     "business_summary": [report.executive_summary],
     "sales_report": report.sales.invoices,
+    "sales_items_report": report.sales.items,
     "payments_report": report.payments.transactions,
     "inventory_report": report.inventory.products,
     "stock_movements": report.inventory.movements,
@@ -31,7 +32,7 @@ function reportRows(report: any, category: ReportCategory) {
     "management_insights": report.insights,
   };
   if (category === "financial") return { financial_report: [report.financial] };
-  if (category === "sales") return { sales_report: sheets.sales_report };
+  if (category === "sales") return { sales_report: sheets.sales_report, sales_items_report: sheets.sales_items_report };
   if (category === "payments") return { payments_report: sheets.payments_report };
   if (category === "inventory") return { inventory_report: sheets.inventory_report, stock_movements: sheets.stock_movements };
   if (category === "repairs") return { repairs_report: sheets.repairs_report };
@@ -89,7 +90,7 @@ async function makeWorkbook(report: any, category: ReportCategory) {
   const title = label(category);
   if (category === "complete") addExecutiveSummarySheet(workbook, report, title);
   for (const [name, rows] of entries) {
-    const sheetName = name === "business_summary" ? "00_Executive_Summary" : ({ sales_report: "01_Sales", payments_report: "02_Payments", inventory_report: "03_Inventory", stock_movements: "04_Stock_Movements", repairs_report: "05_Repairs", expenses_report: "06_Expenses", purchases_report: "07_Purchases", customers_report: "08_Customers", management_insights: "09_Insights", financial_report: "01_Financial" } as Record<string, string>)[name] || name.slice(0, 31);
+    const sheetName = name === "business_summary" ? "00_Executive_Summary" : ({ sales_report: "01_Sales", sales_items_report: "01A_Sales_Items", payments_report: "02_Payments", inventory_report: "03_Inventory", stock_movements: "04_Stock_Movements", repairs_report: "05_Repairs", expenses_report: "06_Expenses", purchases_report: "07_Purchases", customers_report: "08_Customers", management_insights: "09_Insights", financial_report: "01_Financial" } as Record<string, string>)[name] || name.slice(0, 31);
     const sheet = workbook.addWorksheet(sheetName);
     sheet.addRow(["Panther Legacy Garage", title]);
     sheet.addRow(["Reporting period", `${report.meta.from} to ${report.meta.to}`]);

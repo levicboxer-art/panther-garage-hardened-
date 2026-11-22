@@ -4,15 +4,16 @@ import { useCallback, useEffect, useState } from "react";
 import { Bell, RefreshCw, X } from "lucide-react";
 
 type InvoiceItem = {
-  product_id: string;
+  product_id: string | null;
   product_name: string;
   sku: string;
+  item_type?: "STOCK" | "USED_NONSTOCK";
   quantity: number;
   unit_price: number;
   effective_unit_price: number;
   current_stock: number | null;
-  unit_cost?: number;
-  gross_profit?: number;
+  unit_cost?: number | null;
+  gross_profit?: number | null;
 };
 type Invoice = {
   id: string;
@@ -21,6 +22,12 @@ type Invoice = {
   total: number;
   balance_due: number;
   created_at: string;
+  seller?: { full_name: string } | null;
+  service_performed?: boolean;
+  service_fee?: number;
+  mechanic_name?: string | null;
+  registration_number?: string | null;
+  service_notes?: string | null;
   customers: { full_name: string; phone: string | null } | null;
   sale_items: InvoiceItem[];
 };
@@ -141,17 +148,18 @@ export default function RecentInvoicesWorkspace({ role }: { role: "BOSS" | "EMPL
         <span className="muted text-xs shrink-0">Latest 100</span>
       </div>
       <div className="table-wrap"><table>
-        <thead><tr><th>INVOICE / DATE</th><th>SOLD PARTS · QTY · SALE PRICE · STOCK</th>{isBoss && <th>FIFO PURCHASE COST · GROSS PROFIT</th>}<th>PAYMENT</th><th>CUSTOMER</th><th>TOTAL</th><th>BALANCE</th></tr></thead>
+        <thead><tr><th>INVOICE / DATE</th><th>SOLD BY / SERVICE</th><th>SOLD PARTS · QTY · SALE PRICE · STOCK</th>{isBoss && <th>PURCHASE COST · GROSS PROFIT</th>}<th>PAYMENT</th><th>CUSTOMER</th><th>TOTAL</th><th>BALANCE</th></tr></thead>
         <tbody>{invoices.map((invoice) => <tr key={invoice.id}>
           <td><div className="font-semibold">{invoice.invoice_number}</div><div className="muted text-xs mt-1">{new Date(invoice.created_at).toLocaleString()}</div></td>
+          <td><div className="font-semibold text-xs">{invoice.seller?.full_name || "Staff member"}</div>{invoice.service_performed && <div className="mt-2 min-w-[150px] text-[11px]"><div className="lime">Service fee: {money(Number(invoice.service_fee || 0))}</div><div className="muted">Mechanic: {invoice.mechanic_name || "—"}</div><div className="muted">Plate: {invoice.registration_number || "—"}</div>{invoice.service_notes && <div className="muted mt-1">{invoice.service_notes}</div>}</div>}</td>
           <td><div className="space-y-2">{(invoice.sale_items || []).map((item, index) => <div key={`${invoice.id}-${item.product_id}-${index}`} className="min-w-[230px]">
-            <div className="font-semibold text-xs">{item.product_name} <span className="muted">· {item.sku}</span></div>
+            <div className="font-semibold text-xs">{item.product_name} <span className="muted">· {item.item_type === "USED_NONSTOCK" ? "Used · non-stock" : item.sku}</span></div>
             <div className="text-[11px] muted">{item.quantity} sold · {money(Number(item.effective_unit_price))} / unit</div>
-            <div className="text-[11px]">Remaining stock: <b className={item.current_stock === 0 ? "text-amber-300" : "lime"}>{item.current_stock == null ? "Unavailable" : `${item.current_stock} units`}</b></div>
+            <div className="text-[11px]">{item.item_type === "USED_NONSTOCK" ? <b className="muted">Not tracked in inventory</b> : <>Remaining stock: <b className={item.current_stock === 0 ? "text-amber-300" : "lime"}>{item.current_stock == null ? "Unavailable" : `${item.current_stock} units`}</b></>}</div>
           </div>)}</div></td>
           {isBoss && <td><div className="space-y-2">{(invoice.sale_items || []).map((item, index) => <div key={`${invoice.id}-profit-${item.product_id}-${index}`} className="min-w-[180px]">
-            <div className="text-[11px] muted">{money(Number(item.unit_cost || 0))} / unit FIFO</div>
-            <div className="text-xs">Gross profit: <b className={Number(item.gross_profit) >= 0 ? "lime" : "text-red-300"}>{money(Number(item.gross_profit || 0))}</b></div>
+            <div className="text-[11px] muted">{item.unit_cost == null ? "Cost not recorded" : `${money(Number(item.unit_cost))} / unit ${item.item_type === "USED_NONSTOCK" ? "recorded" : "FIFO"}`}</div>
+            <div className="text-xs">Gross profit: {item.gross_profit == null ? <b className="text-amber-200">Unknown</b> : <b className={Number(item.gross_profit) >= 0 ? "lime" : "text-red-300"}>{money(Number(item.gross_profit))}</b>}</div>
           </div>)}</div></td>}
           <td>{paymentLabel[invoice.payment_method] || invoice.payment_method}</td>
           <td>{invoice.customers?.full_name || "Walk-in"}</td>

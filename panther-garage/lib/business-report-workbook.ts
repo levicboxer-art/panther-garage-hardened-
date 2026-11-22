@@ -564,7 +564,8 @@ function addManagementAlertSheet(workbook: ExcelJS.Workbook, report: Row, logoIm
 }
 
 function addActivitySheet(workbook: ExcelJS.Workbook, report: Row, logoImageId: number | null) {
-  const sheet = addCanvas(workbook, "Transaction Detail", "A1:L50000", 0);
+  const sheet = addCanvas(workbook, "Transaction Detail", "A1:M50000", 0);
+  sheet.getColumn(13).width = 14;
   addHeader(workbook, sheet, report, "Monthly Business Performance Report · Records", logoImageId);
   sheet.mergeCells("B5:L5");
   sheet.getCell("B5").value = "Supporting records for the summary pages. Figures are drawn from recorded PGMS transactions; purchase orders are shown separately from operating expenses.";
@@ -578,15 +579,17 @@ function addActivitySheet(workbook: ExcelJS.Workbook, report: Row, logoImageId: 
     const final = addTable(sheet, row, 2, headers, rows, { moneyCols });
     row = Math.max(row + rows.length + 2, final + 2);
   };
-  const sales = (report.sales?.invoices || []).map((item: Row) => [item.invoice, item.date, item.total, item.discount, item.amount_paid, item.balance_due, item.payment_method]);
-  addDetailTable("Sales Invoices & Collections", ["Invoice", "Date", "Total (RWF)", "Discount (RWF)", "Collected (RWF)", "Balance (RWF)", "Method"], sales, [2, 3, 4, 5]);
+  const sales = (report.sales?.invoices || []).map((item: Row) => [item.invoice, item.date, item.employee, item.total, item.discount, item.amount_paid, item.balance_due, item.payment_method, item.service_fee, item.mechanic_name, item.registration_number]);
+  addDetailTable("Sales Invoices & Collections", ["Invoice", "Date", "Employee", "Total (RWF)", "Discount (RWF)", "Collected (RWF)", "Balance (RWF)", "Method", "Service Fee (RWF)", "Mechanic", "Motorcycle Plate"], sales, [3, 4, 5, 8]);
+  const saleItems = (report.sales?.items || []).map((item: Row) => [item.date, item.invoice, item.employee, item.item, item.item_type, item.sku, item.quantity, item.unit_price, item.line_total, item.discount_allocated, item.net_line_total, item.unit_cost]);
+  addDetailTable("Sales Item Detail by Employee", ["Date", "Invoice", "Employee", "Spare Part / Description", "Item Type", "SKU", "Qty", "Unit Price (RWF)", "Gross Line Total (RWF)", "Allocated Discount (RWF)", "Net Line Total (RWF)", "Unit Cost (RWF)"], saleItems, [7, 8, 9, 10, 11]);
   const repairs = (report.repairs?.jobs || []).map((item: Row) => [item.repair_reference, item.service_type, item.status, item.received_date, item.completion_date, item.labour_charge, item.parts_charge, item.total_charge]);
   addDetailTable("Repair Jobs", ["Reference", "Recorded issue / service", "Status", "Received", "Completed", "Labour (RWF)", "Parts (RWF)", "Total (RWF)"], repairs, [5, 6, 7]);
   const expenses = (report.expenses?.transactions || []).map((item: Row) => [item.date, item.reference, item.category, item.description, item.amount, item.status, item.payment_method]);
   addDetailTable("Operating Expense Transactions", ["Date", "Reference", "Category", "Description", "Amount (RWF)", "Status", "Method"], expenses, [4]);
   const purchases = (report.purchases || []).map((item: Row) => [item.purchase_order, item.date, item.status, item.subtotal, item.accounting_treatment]);
   addDetailTable("Supplier Purchase Orders", ["Purchase Order", "Date", "Status", "Subtotal (RWF)", "Accounting Treatment"], purchases, [3]);
-  sheet.pageSetup.printArea = `A1:L${Math.max(row, 12)}`;
+  sheet.pageSetup.printArea = `A1:M${Math.max(row, 12)}`;
   return sheet;
 }
 

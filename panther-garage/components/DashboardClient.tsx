@@ -8,7 +8,6 @@ import { canAccess } from "@/lib/rbac";
 import ThemeToggle, { type DashboardTheme } from "@/components/ThemeToggle";
 import SalesWorkspace from "@/components/SalesWorkspace";
 import RecentInvoicesWorkspace from "@/components/RecentInvoicesWorkspace";
-import WorkshopWorkspace from "@/components/WorkshopWorkspace";
 import PurchasingWorkspace from "@/components/PurchasingWorkspace";
 import ReportsWorkspace from "@/components/ReportsWorkspace";
 import RestockingWorkspace from "@/components/RestockingWorkspace";
@@ -28,7 +27,6 @@ import {
   Boxes,
   ShoppingCart,
   ReceiptText,
-  Wrench,
   Users,
   Truck,
   FileBarChart,
@@ -123,7 +121,6 @@ const nav = [
   ["Catalogue review", Tags],
   ["Sales", ShoppingCart],
   ["Recent invoices", ReceiptText],
-  ["Repairs", Wrench],
   ["Customers", Users],
   ["Bookings", Clock3],
   ["Online Orders", ShoppingCart],
@@ -652,7 +649,6 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
           {tab === "Recent invoices" ? <RecentInvoicesWorkspace role={profile.role} /> : null}
           {tab === "Bookings" ? <BookingsWorkspace /> : null}
           {tab === "Online Orders" ? <OrdersWorkspace /> : null}
-          {tab === "Repairs" ? <WorkshopWorkspace products={products} /> : null}
           {tab === "Purchases" && profile.role === "BOSS" ? <PurchasingWorkspace products={products} role={profile.role} /> : null}
           {tab === "Reports" ? <ReportsWorkspace role={profile.role} /> : null}
           {tab === "Shift reports" ? <ShiftReportsWorkspace profile={{ id: profile.id, full_name: profile.full_name, role: profile.role }} /> : null}
@@ -674,7 +670,6 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
               "Customers",
               "Bookings",
               "Online Orders",
-              "Repairs",
               "Purchases",
               "Restocking",
               "Insights",
