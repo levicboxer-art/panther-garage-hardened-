@@ -61,7 +61,7 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
     supabase.from("sales").select("total,amount_paid,status,created_at").gte("created_at", dayStart(trendFrom)).lt("created_at", before).limit(20000),
     supabase.from("sales").select("id,total,created_at,status").eq("status", "COMPLETED").gte("created_at", previousAfter).lt("created_at", previousBefore).limit(10000),
     supabase.from("sale_items").select("id,sale_id,product_id,product_name,sku,quantity,unit_price,unit_cost,line_total,item_type,cost_known,sales!inner(created_at,status)").eq("sales.status", "COMPLETED").gte("sales.created_at", after).lt("sales.created_at", before).limit(20000),
-    supabase.from("repair_jobs").select("id,job_number,customer_id,motorcycle_make,motorcycle_model,reported_issue,status,labour_fee,parts_total,total_cost,received_at,completed_at,collected_at").gte("received_at", after).lt("received_at", before).limit(10000),
+    supabase.from("repair_jobs").select("id,job_number,customer_id,motorcycle_make,motorcycle_model,registration_number,reported_issue,status,labour_fee,parts_total,total_cost,received_by,assigned_to,received_at,completed_at,collected_at,receiver:profiles!repair_jobs_received_by_fkey(full_name),assigned:profiles!repair_jobs_assigned_to_fkey(full_name)").gte("received_at", after).lt("received_at", before).limit(10000),
     supabase.from("repair_parts").select("id,repair_job_id,product_id,product_name,sku,quantity,unit_price,unit_cost,line_total,repair_jobs!inner(received_at,status)").gte("repair_jobs.received_at", after).lt("repair_jobs.received_at", before).limit(20000),
     supabase.from("garage_expenses").select("id,category,description,amount,expense_date,payment_method,reference,status,created_at").gte("expense_date", window.from).lte("expense_date", window.to).limit(10000),
     supabase.from("garage_expenses").select("id,amount,expense_date,status").gte("expense_date", window.previousFrom).lte("expense_date", window.previousTo).limit(10000),
@@ -187,7 +187,7 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
   const expensesByCategory = Object.values(approvedExpenses.reduce((map: Record<string, Row>, row) => { const key = row.category || "Unclassified"; map[key] = map[key] || { category: key, amount: 0, count: 0 }; map[key].amount += n(row.amount); map[key].count += 1; return map; }, {})).map((row) => ({ ...row, amount: round(row.amount) })).sort((a, b) => b.amount - a.amount);
   const paymentsByMethod = Object.values(completedSales.reduce((map: Record<string, Row>, row) => { const key = row.payment_method || "UNSPECIFIED"; map[key] = map[key] || { method: key, count: 0, amount: 0 }; map[key].count += 1; map[key].amount += n(row.amount_paid); return map; }, {})).map((row) => ({ ...row, amount: round(row.amount) }));
 
-  const repairsTable = repairs.map((row) => ({ repair_reference: row.job_number, service_type: row.reported_issue || "Motorcycle repair", status: row.status, received_date: row.received_at, completion_date: row.completed_at, labour_charge: n(row.labour_fee), parts_charge: n(row.parts_total), total_charge: n(row.total_cost), amount_paid: null, outstanding_balance: null }));
+  const repairsTable = repairs.map((row) => ({ repair_reference: row.job_number, intake_employee: row.receiver?.full_name || "Staff member", assigned_mechanic: row.assigned?.full_name || "Not assigned", motorcycle_plate: row.registration_number || "Not recorded", service_type: row.reported_issue || "Motorcycle repair", status: row.status, received_date: row.received_at, completion_date: row.completed_at, labour_charge: n(row.labour_fee), parts_charge: n(row.parts_total), job_value_not_payment: n(row.total_cost), amount_paid: null, outstanding_balance: null }));
   const saleById = new Map(completedSales.map((row) => [row.id, row]));
   const saleLineDetails = saleItems.map((item) => {
     const sale = saleById.get(item.sale_id);
@@ -206,6 +206,39 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
       unit_cost: item.cost_known === false || item.unit_cost === null || item.unit_cost === undefined ? null : n(item.unit_cost),
     };
   });
+  const salesByEmployeeDay = new Map<string, Row>();
+  const employeeDayKey = (date: unknown, employee: unknown) => `${String(date || "").slice(0, 10)}|${String(employee || "Staff member")}`;
+  for (const sale of completedSales) {
+    const employee = sale.seller?.full_name || "Staff member";
+    const day = String(sale.created_at || "").slice(0, 10);
+    const key = employeeDayKey(day, employee);
+    const row = salesByEmployeeDay.get(key) || { date: day, employee, invoice_count: 0, invoiced_total: 0, collected_total: 0, outstanding_total: 0, part_units: 0, invoices: [], parts: [] };
+    row.invoice_count += 1;
+    row.invoiced_total += n(sale.total);
+    row.collected_total += n(sale.amount_paid);
+    row.outstanding_total += n(sale.balance_due);
+    row.invoices.push(sale.invoice_number || "—");
+    salesByEmployeeDay.set(key, row);
+  }
+  for (const item of saleLineDetails) {
+    const key = employeeDayKey(item.date, item.employee);
+    const row = salesByEmployeeDay.get(key);
+    if (!row) continue;
+    row.part_units += n(item.quantity);
+    row.parts.push({ item: item.item, item_type: item.item_type, quantity: item.quantity, invoice: item.invoice });
+  }
+  const employeeDaySales: Row[] = ([...salesByEmployeeDay.values()] as Row[]).map((row): Row => ({ ...row, invoiced_total: round(row.invoiced_total), collected_total: round(row.collected_total), outstanding_total: round(row.outstanding_total) })).sort((a: Row, b: Row) => a.date.localeCompare(b.date) || a.employee.localeCompare(b.employee));
+  const repairIntakesByEmployeeDay = new Map<string, Row>();
+  for (const row of repairs) {
+    const date = String(row.received_at || "").slice(0, 10);
+    const employee = row.receiver?.full_name || "Staff member";
+    const key = employeeDayKey(date, employee);
+    const group = repairIntakesByEmployeeDay.get(key) || { date, intake_employee: employee, intake_count: 0, jobs: [] };
+    group.intake_count += 1;
+    group.jobs.push({ repair_reference: row.job_number, motorcycle_plate: row.registration_number || "Not recorded", reported_issue: row.reported_issue || "Motorcycle repair", assigned_mechanic: row.assigned?.full_name || "Not assigned", status: row.status, job_value_not_payment: n(row.total_cost) });
+    repairIntakesByEmployeeDay.set(key, group);
+  }
+  const repairIntakeGroups = [...repairIntakesByEmployeeDay.values()].sort((a, b) => a.date.localeCompare(b.date) || a.intake_employee.localeCompare(b.intake_employee));
   const customersInPeriod = customers.filter((row) => inWindow(row, "created_at", window.from, window.to));
   const customerIds = new Set(completedSales.filter((row) => row.customer_id).map((row) => row.customer_id));
   const returningCustomerIds = new Set<string>();
@@ -238,10 +271,10 @@ export async function buildBusinessReport(supabase: SupabaseClient, window: Repo
       highest_gross_profit_product: highestProfitProduct?.product_name || null, highest_gross_profit_product_amount: highestProfitProduct ? n(highestProfitProduct.gross_profit) : null,
     },
     financial: { gross_sales: grossSales, discounts, net_sales_revenue: salesRevenue, spare_parts_revenue: partsRevenue, sale_service_revenue: saleServiceRevenue, repair_service_revenue: repairRevenue, cost_of_goods_sold: hasCompleteCostData ? cogs : null, gross_profit: hasCompleteCostData ? grossProfit : null, gross_profit_margin_pct: hasCompleteCostData && salesRevenue > 0 ? round((grossProfit / salesRevenue) * 100) : null, operating_expenses: operatingExpenses, net_operating_result: hasCompleteCostData ? netOperatingResult : null, result_status: resultStatus, refunds: null, note: "Refund records are not present in the PGMS schema; refund amount is not available rather than zero." },
-    sales: { invoices: completedSales.map((row) => ({ invoice: row.invoice_number, date: row.created_at, employee: row.seller?.full_name || "Staff member", total: n(row.total), discount: n(row.discount), amount_paid: n(row.amount_paid), balance_due: n(row.balance_due), payment_method: row.payment_method, service_performed: Boolean(row.service_performed), service_fee: n(row.service_fee), mechanic_name: row.mechanic_name || null, registration_number: row.registration_number || null, service_notes: row.service_notes || null })), items: saleLineDetails, trend: salesTrend, product_sales: productSales, average_order_value: completedSales.length ? round(salesRevenue / completedSales.length) : 0 },
+    sales: { invoices: completedSales.map((row) => ({ invoice: row.invoice_number, date: row.created_at, employee: row.seller?.full_name || "Staff member", total: n(row.total), discount: n(row.discount), amount_paid: n(row.amount_paid), balance_due: n(row.balance_due), payment_method: row.payment_method, service_performed: Boolean(row.service_performed), service_fee: n(row.service_fee), mechanic_name: row.mechanic_name || null, registration_number: row.registration_number || null, service_notes: row.service_notes || null })), items: saleLineDetails, employee_day_summary: employeeDaySales, trend: salesTrend, product_sales: productSales, average_order_value: completedSales.length ? round(salesRevenue / completedSales.length) : 0 },
     payments: { successful_count: completedSales.filter((row) => n(row.amount_paid) > 0).length, successful_value: collected, pending_count: null, failed_count: null, refunded_count: null, unreconciled_count: null, by_method: paymentsByMethod, transactions: completedSales.map((row) => ({ reference: row.invoice_number, date: row.created_at, amount: n(row.amount_paid), status: n(row.amount_paid) > 0 ? "RECORDED_COLLECTION" : "OUTSTANDING_BALANCE", method: row.payment_method, related_sale: row.id, reconciliation_status: "SALE_RECORD_ONLY" })) },
     inventory: { summary: { distinct_products: inventory.length, units_in_stock: inventory.reduce((sum, row) => sum + row.quantity_in_stock, 0), stock_purchase_value: stockPurchaseValue, estimated_potential_sales_value: potentialSalesValue, low_stock_products: inventory.filter((row) => row.stock_status === "LOW_STOCK").length, out_of_stock_products: inventory.filter((row) => row.stock_status === "OUT_OF_STOCK").length }, products: inventory, movements },
-    repairs: { summary: { total_jobs: repairs.length, completed_jobs: repairClosed.length, pending_jobs: repairPending.length, cancelled_jobs: repairCancelled.length, repair_service_revenue: repairRevenue, parts_consumed: repairParts.reduce((sum, row) => sum + n(row.quantity), 0), average_completion_days: repairClosed.length ? round(repairClosed.reduce((sum, row) => sum + (row.completed_at ? (new Date(row.completed_at).getTime() - new Date(row.received_at).getTime()) / 86_400_000 : 0), 0) / repairClosed.length) : null }, service_demand: serviceDemand, service_revenue: serviceRevenue, jobs: repairsTable },
+    repairs: { summary: { total_jobs: repairs.length, completed_jobs: repairClosed.length, pending_jobs: repairPending.length, cancelled_jobs: repairCancelled.length, repair_service_revenue: repairRevenue, parts_consumed: repairParts.reduce((sum, row) => sum + n(row.quantity), 0), average_completion_days: repairClosed.length ? round(repairClosed.reduce((sum, row) => sum + (row.completed_at ? (new Date(row.completed_at).getTime() - new Date(row.received_at).getTime()) / 86_400_000 : 0), 0) / repairClosed.length) : null }, service_demand: serviceDemand, service_revenue: serviceRevenue, employee_day_intakes: repairIntakeGroups, jobs: repairsTable },
     expenses: { summary: { total_expenses: operatingExpenses, supplier_purchases: round(purchaseOrders.filter((row) => row.status !== "CANCELLED").reduce((sum, row) => sum + n(row.subtotal), 0)), purchase_orders: purchaseOrders.length, outstanding_supplier_balances: round(invoices.reduce((sum, row) => sum + Math.max(0, n(row.amount) - n(row.paid_amount)), 0)) }, by_category: expensesByCategory, transactions: expenses.map((row) => ({ date: row.expense_date, reference: row.reference || row.id, category: row.category, description: row.description, amount: n(row.amount), status: row.status, payment_method: row.payment_method })) },
     purchases: purchaseOrders.map((row) => ({ purchase_order: row.order_number || row.id, date: row.order_date || row.created_at, supplier_id: row.supplier_id, status: row.status, subtotal: n(row.subtotal), accounting_treatment: "INVENTORY_PURCHASE_NOT_OPERATING_EXPENSE" })),
     customers: { registered: customers.length, new_customers: customersInPeriod.length, returning_customers: returningCustomerIds.size, total_customer_orders: customerIds.size, average_order_value: completedSales.length ? round(salesRevenue / completedSales.length) : 0, most_active_customer_count: [...visits.values()].sort((a, b) => b - a).slice(0, 10), outstanding_balances: customerBalance },

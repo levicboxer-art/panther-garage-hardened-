@@ -22,6 +22,7 @@ function reportRows(report: any, category: ReportCategory) {
     "business_summary": [report.executive_summary],
     "sales_report": report.sales.invoices,
     "sales_items_report": report.sales.items,
+    "employee_day_summary": report.sales.employee_day_summary,
     "payments_report": report.payments.transactions,
     "inventory_report": report.inventory.products,
     "stock_movements": report.inventory.movements,
@@ -32,7 +33,7 @@ function reportRows(report: any, category: ReportCategory) {
     "management_insights": report.insights,
   };
   if (category === "financial") return { financial_report: [report.financial] };
-  if (category === "sales") return { sales_report: sheets.sales_report, sales_items_report: sheets.sales_items_report };
+  if (category === "sales") return { employee_day_summary: sheets.employee_day_summary, sales_report: sheets.sales_report, sales_items_report: sheets.sales_items_report };
   if (category === "payments") return { payments_report: sheets.payments_report };
   if (category === "inventory") return { inventory_report: sheets.inventory_report, stock_movements: sheets.stock_movements };
   if (category === "repairs") return { repairs_report: sheets.repairs_report };
@@ -90,7 +91,7 @@ async function makeWorkbook(report: any, category: ReportCategory) {
   const title = label(category);
   if (category === "complete") addExecutiveSummarySheet(workbook, report, title);
   for (const [name, rows] of entries) {
-    const sheetName = name === "business_summary" ? "00_Executive_Summary" : ({ sales_report: "01_Sales", sales_items_report: "01A_Sales_Items", payments_report: "02_Payments", inventory_report: "03_Inventory", stock_movements: "04_Stock_Movements", repairs_report: "05_Repairs", expenses_report: "06_Expenses", purchases_report: "07_Purchases", customers_report: "08_Customers", management_insights: "09_Insights", financial_report: "01_Financial" } as Record<string, string>)[name] || name.slice(0, 31);
+    const sheetName = name === "business_summary" ? "00_Executive_Summary" : ({ employee_day_summary: "01_Employee_Day", sales_report: "02_Sales", sales_items_report: "02A_Sales_Items", payments_report: "03_Payments", inventory_report: "04_Inventory", stock_movements: "05_Stock_Movements", repairs_report: "06_Repairs", expenses_report: "07_Expenses", purchases_report: "08_Purchases", customers_report: "09_Customers", management_insights: "10_Insights", financial_report: "01_Financial" } as Record<string, string>)[name] || name.slice(0, 31);
     const sheet = workbook.addWorksheet(sheetName);
     sheet.addRow(["Panther Legacy Garage", title]);
     sheet.addRow(["Reporting period", `${report.meta.from} to ${report.meta.to}`]);
@@ -148,6 +149,19 @@ async function makePdf(report: any, category: ReportCategory) {
   line("Distinct products", report.inventory.summary.distinct_products); line("Units in stock", report.inventory.summary.units_in_stock); line("Stock purchase value", report.inventory.summary.stock_purchase_value); line("Potential sales value", report.inventory.summary.estimated_potential_sales_value);
   doc.moveDown(); heading("Repair and service performance");
   for (const [key, value] of Object.entries(report.repairs.summary)) line(key.replaceAll("_", " "), value);
+  doc.moveDown(); heading("Employee sales by day");
+  doc.fontSize(8).fillColor("#526A3C").text("Invoiced value, recorded collections and outstanding balances are distinct amounts.");
+  for (const item of report.sales.employee_day_summary) {
+    line(`${item.date} · ${item.employee}`, `${item.invoice_count} invoices (${item.invoices.join(", ")}) · ${item.part_units} part units · invoiced ${money(item.invoiced_total)} · collected ${money(item.collected_total)} · outstanding ${money(item.outstanding_total)}`);
+    if (item.parts.length) line("Parts", item.parts.map((part: any) => `${part.item} × ${part.quantity} (${part.invoice || "no invoice ref"})`).join("; "));
+  }
+  doc.moveDown(); heading("Repair intakes by receiving employee");
+  doc.fontSize(8).fillColor("#526A3C").text("Repair job value is not a recorded repair payment.");
+  for (const group of report.repairs.employee_day_intakes) {
+    doc.font("Helvetica-Bold").fillColor("#17212B").fontSize(10).text(`${group.date} · ${group.intake_employee} · ${group.intake_count} intake${group.intake_count === 1 ? "" : "s"}`);
+    for (const job of group.jobs) line(job.repair_reference, `Plate ${job.motorcycle_plate} · ${job.reported_issue} · mechanic ${job.assigned_mechanic} · ${job.status} · job value ${money(job.job_value_not_payment)}`);
+  }
+  doc.moveDown();
   doc.moveDown(); heading("Management insights and recommended actions");
   for (const insight of report.insights) { doc.font("Helvetica-Bold").fillColor(insight.severity === "RED" ? "#A12828" : insight.severity === "AMBER" ? "#986B12" : "#256B8A").text(`${insight.severity}: ${insight.issue}`); doc.font("Helvetica").fillColor("#24323D").text(`Metric: ${insight.metric}. Action: ${insight.recommended_action}`); doc.moveDown(0.4); }
   const range = doc.bufferedPageRange();
