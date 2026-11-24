@@ -5,9 +5,9 @@ async function staff(){
   const supabase=await createClient();
   const {data:{user}}=await supabase.auth.getUser();
   if(!user)return {supabase,user:null,response:NextResponse.json({error:"Unauthorized"},{status:401})};
-  const {data:profile}=await supabase.from("profiles").select("active").eq("id",user.id).single();
+  const {data:profile}=await supabase.from("profiles").select("active,role").eq("id",user.id).single();
   if(!profile?.active)return {supabase,user:null,response:NextResponse.json({error:"Forbidden"},{status:403})};
-  return {supabase,user,response:null};
+  return {supabase,user,role:profile.role,response:null};
 }
 export async function GET(){
   const s=await staff(); if(s.response)return s.response;
@@ -25,9 +25,19 @@ export async function POST(req:Request){
   const labour=Number(b.labour_fee||0); const parts=Array.isArray(b.parts)?b.parts.map((p:any)=>({product_id:String(p.product_id||""),quantity:Number(p.quantity)})):[];
   if(!make||!issue)return NextResponse.json({error:"Motorcycle make and reported problem are required."},{status:400});
   if(!Number.isFinite(labour)||labour<0||parts.some((p:any)=>!p.product_id||!Number.isInteger(p.quantity)||p.quantity<1))return NextResponse.json({error:"Check labour fee and spare-part quantities."},{status:400});
-  const {data,error}=await s.supabase.rpc("create_repair_job",{
+  const repairArgs={
     p_customer_id:b.customer_id||null,p_motorcycle_make:make,p_motorcycle_model:String(b.motorcycle_model||""),p_registration_number:String(b.registration_number||""),p_reported_issue:issue,p_assigned_to:b.assigned_to||null,p_labour_fee:labour,p_parts:parts,p_notes:String(b.notes||"")
-  });
+  };
+  let data:any, error:any;
+  if(s.role==="EMPLOYEE"){
+    const {data:shift,error:shiftError}=await s.supabase.rpc("start_employee_shift");
+    if(shiftError||!shift?.id)return NextResponse.json({error:"Could not open an active employee shift."},{status:503});
+    const result=await s.supabase.rpc("create_repair_job_for_shift",{p_shift_id:shift.id,...repairArgs});
+    data=result.data; error=result.error;
+  }else{
+    const result=await s.supabase.rpc("create_repair_job",repairArgs);
+    data=result.data; error=result.error;
+  }
   if(error)return NextResponse.json({error:error.message},{status:400});
   const {data:job}=await s.supabase.from("repair_jobs").select("id,job_number,status,total_cost,received_at").eq("id",data).single();
   await flushBossAlertEmail();
@@ -37,7 +47,17 @@ export async function PATCH(req:Request){
   const s=await staff(); if(s.response)return s.response;
   let b:any; try{b=await req.json()}catch{return NextResponse.json({error:"Invalid request body"},{status:400})}
   if(!b.id||!b.status)return NextResponse.json({error:"Job and new status are required."},{status:400});
-  const {error}=await s.supabase.rpc("update_repair_status",{p_job_id:b.id,p_status:String(b.status),p_diagnosis:String(b.diagnosis||""),p_note:String(b.note||"")});
+  const statusArgs={p_job_id:b.id,p_status:String(b.status),p_diagnosis:String(b.diagnosis||""),p_note:String(b.note||"")};
+  let error:any;
+  if(s.role==="EMPLOYEE"){
+    const {data:shift,error:shiftError}=await s.supabase.rpc("start_employee_shift");
+    if(shiftError||!shift?.id)return NextResponse.json({error:"Could not open an active employee shift."},{status:503});
+    const result=await s.supabase.rpc("update_repair_status_for_shift",{p_shift_id:shift.id,...statusArgs});
+    error=result.error;
+  }else{
+    const result=await s.supabase.rpc("update_repair_status",statusArgs);
+    error=result.error;
+  }
   if(error)return NextResponse.json({error:error.message},{status:400});
   return NextResponse.json({message:"Repair status updated."});
 }

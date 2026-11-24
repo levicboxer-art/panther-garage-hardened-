@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardList, Loader2, RefreshCw, Save, Search } from "lucide-react";
 
 type Report = {
@@ -19,10 +19,76 @@ type Report = {
 };
 
 type Profile = { id: string; full_name: string; role: "BOSS" | "EMPLOYEE" };
+type ShiftItem = { product_name: string; sku: string; quantity: number; item_type: "STOCK" | "USED_NONSTOCK" };
+type ShiftSale = {
+  id: string;
+  invoice_number: string;
+  created_at: string;
+  total: number;
+  amount_paid: number;
+  balance_due: number;
+  service_performed: boolean;
+  service_fee: number;
+  mechanic_name: string | null;
+  motorcycle_plate: string | null;
+  service_description: string | null;
+  sale_items: ShiftItem[];
+};
+type ShiftRepair = {
+  id: string;
+  job_number: string;
+  motorcycle_make: string;
+  motorcycle_model: string | null;
+  registration_number: string | null;
+  reported_issue: string;
+  status: string;
+  received_at: string;
+  completed_at: string | null;
+  total_cost: number;
+  job_value_not_payment: number;
+  customers: { full_name: string; phone: string | null } | null;
+  assigned: { full_name: string } | null;
+};
+type ShiftRepairActivity = {
+  id: string;
+  old_status: string | null;
+  new_status: string;
+  note: string | null;
+  created_at: string;
+  job: ShiftRepair | null;
+};
+type ShiftSession = {
+  id: string;
+  employee_id: string;
+  employee_name: string;
+  started_at: string;
+  ended_at: string | null;
+  sales: ShiftSale[];
+  repair_intakes: ShiftRepair[];
+  repair_activity: ShiftRepairActivity[];
+  totals: {
+    invoice_count: number;
+    invoiced_total: number;
+    collected_total: number;
+    outstanding_total: number;
+    part_units: number;
+    service_invoice_count: number;
+    service_fee_total: number;
+    repair_intake_count: number;
+    repair_job_value_not_payment: number;
+    repair_status_update_count: number;
+  };
+};
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const fmtDate = (iso: string) =>
   new Date(iso.slice(0, 10) + "T00:00:00").toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+const fmtDateTime = (iso: string | null) => iso ? new Date(iso).toLocaleString() : "Still active";
+const money = (value: number) => new Intl.NumberFormat("en-RW", { style: "currency", currency: "RWF", maximumFractionDigits: 0 }).format(Number(value) || 0);
+const elapsed = (start: string, end: string | null) => {
+  const minutes = Math.max(0, Math.floor(((end ? new Date(end).getTime() : Date.now()) - new Date(start).getTime()) / 60_000));
+  return `${Math.floor(minutes / 60)}h ${minutes % 60}m`;
+};
 
 export default function ShiftReportsWorkspace({ profile }: { profile: Profile }) {
   const isBoss = profile.role === "BOSS";
@@ -33,6 +99,16 @@ export default function ShiftReportsWorkspace({ profile }: { profile: Profile })
   const [filterEmployee, setFilterEmployee] = useState("ALL");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Report | null>(null);
+  const [shifts, setShifts] = useState<ShiftSession[]>([]);
+  const [shiftsLoading, setShiftsLoading] = useState(true);
+  const [shiftError, setShiftError] = useState("");
+  const [shiftEmployeeFilter, setShiftEmployeeFilter] = useState("ALL");
+  const [selectedShiftId, setSelectedShiftId] = useState("");
+  const [startingShift, setStartingShift] = useState(false);
+  const [hasMoreShifts, setHasMoreShifts] = useState(false);
+  const [shiftEmployeeOptions, setShiftEmployeeOptions] = useState<{ id: string; full_name: string }[]>([]);
+  const shiftRowsRef = useRef<ShiftSession[]>([]);
+  const shiftNextOffsetRef = useRef(0);
 
   // ---------- form state ----------
   const [form, setForm] = useState({
@@ -63,9 +139,43 @@ export default function ShiftReportsWorkspace({ profile }: { profile: Profile })
     }
   }, []);
 
+  const loadShifts = useCallback(async (append = false) => {
+    setShiftsLoading(true);
+    setShiftError("");
+    try {
+      const offset = append ? shiftNextOffsetRef.current : 0;
+      const params = new URLSearchParams();
+      if (offset) params.set("offset", String(offset));
+      if (isBoss && shiftEmployeeFilter !== "ALL") params.set("employee_id", shiftEmployeeFilter);
+      const suffix = params.toString();
+      const response = await fetch(`/api/staff-shifts${suffix ? `?${suffix}` : ""}`, { cache: "no-store" });
+      const body = await response.json();
+      if (!response.ok) {
+        setShiftError(body?.error || "Could not load employee shifts.");
+        return;
+      }
+      const rows = (body.shifts || []) as ShiftSession[];
+      const combined = append ? [...shiftRowsRef.current, ...rows] : rows;
+      shiftRowsRef.current = combined;
+      setShifts(combined);
+      setShiftEmployeeOptions((body.employee_options || []) as { id: string; full_name: string }[]);
+      setHasMoreShifts(Boolean(body.has_more_shifts));
+      shiftNextOffsetRef.current = Number(body.next_offset) || offset + rows.length;
+      setSelectedShiftId((current) => combined.some((row) => row.id === current) ? current : combined[0]?.id || "");
+    } catch {
+      setShiftError("Network error while loading employee shifts.");
+    } finally {
+      setShiftsLoading(false);
+    }
+  }, [isBoss, shiftEmployeeFilter]);
+
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadShifts();
+  }, [loadShifts]);
 
   // Same-day report (employee) or the selected one (boss review) prefills the form so it amends instead of duplicating.
   const myToday = useMemo(
@@ -139,6 +249,41 @@ export default function ShiftReportsWorkspace({ profile }: { profile: Profile })
     return rows;
   }, [reports, isBoss, filterEmployee, search]);
 
+  const activeShift = useMemo(
+    () => shifts.find((shift) => shift.employee_id === profile.id && !shift.ended_at) || null,
+    [shifts, profile.id],
+  );
+  const shiftEmployees = useMemo(() => shiftEmployeeOptions.length
+    ? shiftEmployeeOptions.map((employee) => [employee.id, employee.full_name] as [string, string])
+    : [...new Map(shifts.map((shift) => [shift.employee_id, shift.employee_name])).entries()]
+      .sort((a, b) => a[1].localeCompare(b[1])), [shifts, shiftEmployeeOptions]);
+  const visibleShifts = useMemo(() => shiftEmployeeFilter === "ALL"
+    ? shifts
+    : shifts.filter((shift) => shift.employee_id === shiftEmployeeFilter), [shifts, shiftEmployeeFilter]);
+  const selectedShift = visibleShifts.find((shift) => shift.id === selectedShiftId) || visibleShifts[0] || null;
+
+  async function startShift() {
+    setStartingShift(true);
+    setShiftError("");
+    try {
+      const response = await fetch("/api/staff-shifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "start" }),
+      });
+      const body = await response.json();
+      if (!response.ok) {
+        setShiftError(body?.error || "Could not start your shift.");
+        return;
+      }
+      await loadShifts();
+    } catch {
+      setShiftError("Network error while starting your shift.");
+    } finally {
+      setStartingShift(false);
+    }
+  }
+
   const field = (key: keyof typeof form, label: string, placeholder = "") => (
     <label className="block">
       <span className="tag">{label}</span>
@@ -191,6 +336,122 @@ export default function ShiftReportsWorkspace({ profile }: { profile: Profile })
       {notice && (
         <div className={`card p-4 text-sm ${notice.kind === "ok" ? "text-lime" : "badge-red"}`}>{notice.text}</div>
       )}
+
+      <section className="card p-5 md:p-6 space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="font-bold">Employee work shifts</h3>
+            <p className="muted mt-1 text-sm">
+              {isBoss
+                ? "Actual login-to-sign-out sessions with invoices, collections, balances and repair intakes linked to the shift."
+                : "Your current shift starts when you enter the dashboard and ends when you sign out."}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {isBoss && <select className="field !w-auto" value={shiftEmployeeFilter} onChange={(event) => setShiftEmployeeFilter(event.target.value)}>
+              <option value="ALL">All employees</option>
+              {shiftEmployees.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+            </select>}
+            <button onClick={() => void loadShifts()} className="btn btn-ghost text-xs" disabled={shiftsLoading}>
+              {shiftsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Refresh
+            </button>
+          </div>
+        </div>
+
+        {!isBoss && <div className="rounded-xl border border-lime/20 bg-lime/[.03] p-4 text-sm">
+          {activeShift ? <>
+            <span className="badge">SHIFT ACTIVE</span>
+            <span className="ml-2">Started {fmtDateTime(activeShift.started_at)} · {elapsed(activeShift.started_at, null)} elapsed</span>
+          </> : <div className="flex flex-wrap items-center justify-between gap-3">
+            <span>No active shift is open. Starting one enables sales and repair intakes to be attributed to you.</span>
+            <button type="button" onClick={() => void startShift()} disabled={startingShift} className="btn btn-primary text-xs">
+              {startingShift ? "Starting…" : "Start shift"}
+            </button>
+          </div>}
+        </div>}
+
+        {shiftError && <p className="text-sm text-red-300" role="alert">{shiftError}</p>}
+        {shiftsLoading ? <p className="muted py-5 text-center"><Loader2 className="inline h-4 w-4 animate-spin mr-2" />Loading employee shifts…</p> : !visibleShifts.length ? (
+          <p className="muted py-5 text-center">No tracked shifts yet. Historical sales and repair jobs are not assigned to invented shifts.</p>
+        ) : <>
+          <div className="table-wrap">
+            <table>
+              <thead><tr>
+                {isBoss && <th>EMPLOYEE</th>}
+                <th>STARTED</th><th>ENDED</th><th>DURATION</th><th>INVOICES</th><th>PART UNITS</th>
+                <th>INVOICED</th><th>SERVICE FEES IN INVOICES</th><th>COLLECTED</th><th>OUTSTANDING</th>
+                <th>REPAIR INTAKES</th><th>REPAIR STATUS UPDATES</th><th>JOB VALUE (NOT PAYMENT)</th>
+              </tr></thead>
+              <tbody>{visibleShifts.map((shift) => <tr key={shift.id} onClick={() => setSelectedShiftId(shift.id)} className={`cursor-pointer ${selectedShift?.id === shift.id ? "!bg-lime/5" : ""}`}>
+                {isBoss && <td className="font-semibold">{shift.employee_name}</td>}
+                <td className="whitespace-nowrap">{fmtDateTime(shift.started_at)}</td>
+                <td className="whitespace-nowrap">{fmtDateTime(shift.ended_at)}</td>
+                <td>{elapsed(shift.started_at, shift.ended_at)}</td>
+                <td>{shift.totals.invoice_count}</td><td>{shift.totals.part_units}</td>
+                <td>{money(shift.totals.invoiced_total)}</td><td>{money(shift.totals.service_fee_total)}</td>
+                <td className="lime">{money(shift.totals.collected_total)}</td><td>{money(shift.totals.outstanding_total)}</td>
+                <td>{shift.totals.repair_intake_count}</td><td>{shift.totals.repair_status_update_count}</td>
+                <td>{money(shift.totals.repair_job_value_not_payment)}</td>
+              </tr>)}</tbody>
+            </table>
+          </div>
+          {hasMoreShifts && <div className="flex justify-center">
+            <button type="button" onClick={() => void loadShifts(true)} disabled={shiftsLoading} className="btn btn-ghost text-xs">
+              {shiftsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Load older shifts
+            </button>
+          </div>}
+
+          {selectedShift && <div className="space-y-4 rounded-xl border border-line p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div><h4 className="font-bold">Shift detail · {selectedShift.employee_name}</h4>
+                <p className="muted mt-1 text-xs">Started {fmtDateTime(selectedShift.started_at)} · Ended {fmtDateTime(selectedShift.ended_at)} · {elapsed(selectedShift.started_at, selectedShift.ended_at)}</p>
+              </div>
+              <span className="badge">{selectedShift.ended_at ? "ENDED" : "ACTIVE"}</span>
+            </div>
+
+            <div>
+              <h5 className="text-sm font-semibold">Sales and invoices</h5>
+              {!selectedShift.sales.length ? <p className="muted mt-2 text-xs">No completed invoices were recorded during this shift.</p> : <div className="mt-2 space-y-2">
+                {selectedShift.sales.map((sale) => <article key={sale.id} className="rounded-lg border border-white/[.08] p-3 text-xs">
+                  <div className="flex flex-wrap justify-between gap-2"><b>{sale.invoice_number}</b><span className="muted">{fmtDateTime(sale.created_at)}</span></div>
+                  <div className="mt-2 grid gap-1 sm:grid-cols-3"><span>Invoiced: <b>{money(sale.total)}</b></span><span>Collected: <b className="lime">{money(sale.amount_paid)}</b></span><span>Outstanding: <b>{money(sale.balance_due)}</b></span></div>
+                  <div className="muted mt-2">{sale.sale_items.length ? sale.sale_items.map((item, index) => <span key={`${item.sku}-${index}`} className="mr-3">{item.product_name} × {item.quantity}{item.item_type === "USED_NONSTOCK" ? " · used/non-stock" : ""}</span>) : "No line items"}</div>
+                  {sale.service_performed && <div className="mt-2 border-t border-white/[.08] pt-2">Service included · Fee {money(sale.service_fee)} · Mechanic {sale.mechanic_name || "—"} · Plate {sale.motorcycle_plate || "—"}{sale.service_description ? ` · ${sale.service_description}` : ""}</div>}
+                </article>)}
+              </div>}
+            </div>
+
+            <div>
+              <h5 className="text-sm font-semibold">Repair intakes received during this shift</h5>
+              <p className="muted mt-1 text-[11px]">A repair job value is not a payment or collection record.</p>
+              {!selectedShift.repair_intakes.length ? <p className="muted mt-2 text-xs">No repair intakes were recorded during this shift.</p> : <div className="table-wrap mt-2">
+                <table><thead><tr><th>RECEIVED</th><th>COMPLETED</th><th>CUSTOMER</th><th>PLATE</th><th>MOTORCYCLE</th><th>ISSUE</th><th>MECHANIC</th><th>STATUS</th><th>JOB VALUE (NOT PAYMENT)</th></tr></thead>
+                  <tbody>{selectedShift.repair_intakes.map((job) => <tr key={job.id}>
+                    <td className="whitespace-nowrap">{fmtDateTime(job.received_at)}</td><td className="whitespace-nowrap">{fmtDateTime(job.completed_at)}</td><td>{job.customers?.full_name || "Walk-in"}</td>
+                    <td>{job.registration_number || "—"}</td><td>{[job.motorcycle_make, job.motorcycle_model].filter(Boolean).join(" ")}</td>
+                    <td>{job.reported_issue}</td><td>{job.assigned?.full_name || "Not assigned"}</td><td>{job.status}</td>
+                    <td>{money(job.job_value_not_payment)}</td>
+                  </tr>)}</tbody>
+                </table>
+              </div>}
+            </div>
+
+            <div>
+              <h5 className="text-sm font-semibold">Repair work and status changes during this shift</h5>
+              <p className="muted mt-1 text-[11px]">A “READY” status indicates the motorcycle was marked repaired/ready. Job value remains separate from payments.</p>
+              {!selectedShift.repair_activity.length ? <p className="muted mt-2 text-xs">No repair status updates were recorded during this shift.</p> : <div className="mt-2 space-y-2">
+                {selectedShift.repair_activity.map((event) => <article key={event.id} className="rounded-lg border border-white/[.08] p-3 text-xs">
+                  <div className="flex flex-wrap justify-between gap-2"><b>{event.job?.job_number || "Repair job"} · {event.job?.registration_number || "No plate recorded"}</b><span className="muted">{fmtDateTime(event.created_at)}</span></div>
+                  {event.job && <div className="muted mt-2">{[event.job.motorcycle_make, event.job.motorcycle_model].filter(Boolean).join(" ")} · {event.job.customers?.full_name || "Walk-in"} · Mechanic {event.job.assigned?.full_name || "Not assigned"} · Job value (not payment): {money(event.job.job_value_not_payment)}</div>}
+                  {event.job?.reported_issue && <div className="mt-1">Reported issue: {event.job.reported_issue}</div>}
+                  <div className="mt-1 font-semibold">{event.old_status || "New"} → {event.new_status}</div>
+                  {event.note && <div className="muted mt-1">Note: {event.note}</div>}
+                </article>)}
+              </div>}
+            </div>
+          </div>}
+        </>}
+      </section>
 
       {/* ---------- employee submission form (boss reviews only) ---------- */}
       {!isBoss && (

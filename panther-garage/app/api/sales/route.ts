@@ -120,7 +120,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "For a service sale, enter a valid fee, mechanic name, and motorcycle plate." }, { status: 400 });
   }
 
-  const { data: saleId, error } = await s.supabase.rpc("create_pos_sale_v2", {
+  const saleArgs = {
     p_customer_id: body.customer_id || null,
     p_items: items,
     p_payment_method: paymentMethod,
@@ -132,8 +132,23 @@ export async function POST(req: Request) {
     p_mechanic_name: mechanicName || null,
     p_motorcycle_plate: registrationNumber || null,
     p_service_description: serviceNotes || null,
-  });
-  if (error) return dbErrorResponse(400, error);
+  };
+  let saleId: string | null = null;
+  let saleError: any = null;
+  if (s.role === "EMPLOYEE") {
+    const { data: shift, error: shiftError } = await s.supabase.rpc("start_employee_shift");
+    if (shiftError) return dbErrorResponse(503, shiftError);
+    if (!shift?.id) return NextResponse.json({ error: "Could not open an active employee shift." }, { status: 503 });
+    const result = await s.supabase.rpc("create_pos_sale_for_shift", { p_shift_id: shift.id, ...saleArgs });
+    saleId = result.data;
+    saleError = result.error;
+  } else {
+    const result = await s.supabase.rpc("create_pos_sale_v2", saleArgs);
+    saleId = result.data;
+    saleError = result.error;
+  }
+  if (saleError) return dbErrorResponse(400, saleError);
+  if (!saleId) return NextResponse.json({ error: "Sale was not created." }, { status: 500 });
   const { data: sale } = await s.supabase.from("sales")
     .select("id,invoice_number,total,amount_paid,balance_due,created_at,service_performed,service_fee,mechanic_name,motorcycle_plate,service_description")
     .eq("id", saleId).single();

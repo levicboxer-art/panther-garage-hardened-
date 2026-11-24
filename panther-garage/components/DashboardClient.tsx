@@ -156,6 +156,7 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
   const [workspaceNotificationToast, setWorkspaceNotificationToast] = useState<WorkspaceNotificationToast | null>(null);
   const previousWorkspaceAlerts = useRef<WorkspaceAlertCounts | null>(null);
   const workspaceAlertRequestId = useRef(0);
+  const autoShiftStartedFor = useRef<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState("");
   const [error, setError] = useState("");
@@ -181,6 +182,21 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
       // Ignore unavailable storage; the expanded sidebar still works.
     }
   }, []);
+
+  // Dashboard entry starts or resumes the employee's one active shift. The
+  // server operation is idempotent so reloads do not create duplicate sessions.
+  useEffect(() => {
+    if (profile.role !== "EMPLOYEE" || autoShiftStartedFor.current === profile.id) return;
+    autoShiftStartedFor.current = profile.id;
+    void fetch("/api/staff-shifts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "start" }),
+    }).then(async (response) => {
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) notify(result.error || "Could not start your employee shift.");
+    }).catch(() => notify("Could not start your employee shift. Check your connection and refresh."));
+  }, [profile.id, profile.role]);
 
   useEffect(() => {
     if (tab === "Employees" && profile.role === "BOSS") void loadEmployees();
@@ -273,7 +289,28 @@ export default function DashboardClient({ profile, initialProducts }: Props) {
   }
 
   async function signOut() {
-    await supabase.auth.signOut();
+    if (profile.role === "EMPLOYEE") {
+      try {
+        const response = await fetch("/api/staff-shifts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "end" }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          notify(result.error || "Could not end your shift. Please retry sign-out.");
+          return;
+        }
+      } catch {
+        notify("Could not end your shift. Check your connection and retry sign-out.");
+        return;
+      }
+    }
+    const { error: signOutError } = await supabase.auth.signOut();
+    if (signOutError) {
+      notify("Could not sign out. Please try again.");
+      return;
+    }
     router.replace("/login");
     router.refresh();
   }
